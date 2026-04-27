@@ -6,8 +6,8 @@ Source value: {{.SourceValue}}
 Return a single JSON object with exactly these fields, no others:
 - "title": a clear short title (max 80 characters). Prefer the source's actual title over an invented one.
 - "summary": a 1-2 sentence factual summary. No marketing language.
-- "highlights": 3-7 concrete bullet points worth surfacing in a Reddit post. Each bullet is one short factual sentence. If the source is sparse, fewer is fine.
-- "audience": a short phrase naming who this is for (e.g., "Postgres practitioners", "Go backend engineers", "self-hosting enthusiasts"). Empty string if unclear.
+- "highlights": 3-7 bullets that would make a Reddit reader stop scrolling. Lead with what's *novel or non-obvious* — the technical wedge, surprising tradeoffs, counterintuitive choices, hard problems sidestepped. Skip dev-onboarding details (language version, Docker for tests, build commands, "how to run it locally") and routine usage instructions; those don't belong in a post lede. Each bullet is one short factual sentence. If the source is sparse, fewer is fine.
+- "audience": the specific wedge of people whose problem this solves, not a generic category. Bad: "data engineers". Good: "Postgres teams who want analytical queries off prod without standing up Spark or a separate warehouse". Empty string if genuinely unclear.
 - "links": canonical URLs that appear in or relate to the content, deduplicated. Never invent URLs. Empty array if none.
 
 Rules:
