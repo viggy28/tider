@@ -18,6 +18,7 @@ post manually. No auth, no posting, no commenting — by design.`,
 func main() {
 	rootCmd.AddCommand(researchCmd)
 	rootCmd.AddCommand(intakeCmd)
+	rootCmd.AddCommand(draftCmd)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
