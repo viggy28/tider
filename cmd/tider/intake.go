@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/viggy28/tider/config"
 	"github.com/viggy28/tider/intake"
 	"github.com/viggy28/tider/internal/llm"
 	"github.com/viggy28/tider/internal/types"
@@ -35,14 +36,28 @@ API key for the chosen provider must be set in the environment
 			return fmt.Errorf("exactly one of --url or --file is required")
 		}
 
-		p, err := llm.New(llm.Config{Provider: intakeProvider, Model: intakeModel})
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		provider, model, maxTokens := cfg.ForTask("intake")
+		// Flags override config when set explicitly.
+		if intakeProvider != "" {
+			provider = intakeProvider
+		}
+		if intakeModel != "" {
+			model = intakeModel
+		}
+		if intakeMaxTokens > 0 {
+			maxTokens = intakeMaxTokens
+		}
+
+		p, err := llm.New(llm.Config{Provider: provider, Model: model})
 		if err != nil {
 			return err
 		}
 		i := intake.New(p)
-		if intakeMaxTokens > 0 {
-			i.MaxTokens = intakeMaxTokens
-		}
+		i.MaxTokens = maxTokens
 
 		ctx := context.Background()
 		var brief *types.Brief
@@ -67,7 +82,7 @@ API key for the chosen provider must be set in the environment
 func init() {
 	intakeCmd.Flags().StringVar(&intakeURL, "url", "", "URL to a blog post or GitHub repo")
 	intakeCmd.Flags().StringVar(&intakeFile, "file", "", "path to a markdown brief")
-	intakeCmd.Flags().StringVar(&intakeProvider, "provider", "openai", "LLM provider: anthropic | openai")
-	intakeCmd.Flags().StringVar(&intakeModel, "model", "gpt-5", "LLM model name")
-	intakeCmd.Flags().IntVar(&intakeMaxTokens, "max-tokens", 0, "LLM completion budget; 0 uses package default (8192).")
+	intakeCmd.Flags().StringVar(&intakeProvider, "provider", "", "LLM provider: anthropic | openai (default from config)")
+	intakeCmd.Flags().StringVar(&intakeModel, "model", "", "LLM model name (default from config)")
+	intakeCmd.Flags().IntVar(&intakeMaxTokens, "max-tokens", 0, "LLM completion budget (default from config)")
 }

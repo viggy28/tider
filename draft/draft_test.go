@@ -133,6 +133,34 @@ func TestRenderPromptIncludesContextAndCounts(t *testing.T) {
 	}
 }
 
+func TestRenderPromptIncludesAuthorContextWhenSet(t *testing.T) {
+	opts := Default()
+	opts.AuthorContext = "Five years at Cloudflare leading the Postgres team. Currently building Streambed."
+	prompt, err := RenderPrompt(sampleBrief(), sampleResearch(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(prompt, "Who you're writing as") {
+		t.Error("author context section heading missing")
+	}
+	if !strings.Contains(prompt, "Five years at Cloudflare") {
+		t.Error("author context body not embedded")
+	}
+	if !strings.Contains(prompt, "ground them in this background") {
+		t.Error("author context guidance to LLM missing")
+	}
+}
+
+func TestRenderPromptOmitsAuthorContextWhenEmpty(t *testing.T) {
+	prompt, err := RenderPrompt(sampleBrief(), sampleResearch(), Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(prompt, "Who you're writing as") {
+		t.Errorf("author context section should not render when AuthorContext empty")
+	}
+}
+
 func TestRenderPromptRejectsZeroCounts(t *testing.T) {
 	_, err := RenderPrompt(sampleBrief(), sampleResearch(), Options{AngleCount: 0, TitlesPerAngle: 3, BodiesPerAngle: 2})
 	if err == nil {
