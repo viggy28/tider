@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/viggy28/tider/config"
 	"github.com/viggy28/tider/draft"
 	"github.com/viggy28/tider/internal/llm"
 	"github.com/viggy28/tider/internal/reddit"
@@ -81,13 +82,23 @@ without a key are skipped with a warning rather than failing the run.`,
 			return fmt.Errorf("research %s: %w", draftSub, err)
 		}
 
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		_, _, cfgMaxTokens := cfg.FanOutModels("draft")
+
 		opts := draft.Default()
 		if draftVariantSet == "full" {
 			opts = draft.Full()
 		}
+		// Resolve max_tokens: explicit flag wins, then config, then opts default.
 		if draftMaxTokens > 0 {
 			opts.MaxTokens = draftMaxTokens
+		} else if cfgMaxTokens > 0 {
+			opts.MaxTokens = cfgMaxTokens
 		}
+		opts.AuthorContext = cfg.AuthorContext
 
 		if draftDryRun {
 			prompt, err := draft.RenderPrompt(*brief, *researchBundle, opts)
@@ -98,7 +109,20 @@ without a key are skipped with a warning rather than failing the run.`,
 			return nil
 		}
 
-		refs, err := buildProviderRefs(draftProviders, draftAnthropic, draftOpenAI)
+		// Resolve fan-out provider list and per-provider models with config fallback.
+		providers := draftProviders
+		if providers == "" {
+			providers = cfg.Defaults.Providers
+		}
+		anthropicModel := draftAnthropic
+		openaiModel := draftOpenAI
+		if anthropicModel == "" {
+			anthropicModel = cfg.LLM.AnthropicModel
+		}
+		if openaiModel == "" {
+			openaiModel = cfg.LLM.OpenAIModel
+		}
+		refs, err := buildProviderRefs(providers, anthropicModel, openaiModel)
 		if err != nil {
 			return err
 		}
@@ -194,9 +218,9 @@ func buildProviderRefs(providersFlag, anthropicModel, openaiModel string) ([]dra
 func init() {
 	draftCmd.Flags().StringVar(&draftBriefPath, "brief", "", "path to a brief.json (output of `tider intake`)")
 	draftCmd.Flags().StringVar(&draftSub, "sub", "", "subreddit name to draft for (e.g., golang)")
-	draftCmd.Flags().StringVar(&draftProviders, "providers", "openai,anthropic", "comma-separated providers to fan out across")
-	draftCmd.Flags().StringVar(&draftAnthropic, "anthropic-model", "claude-sonnet-4-7", "Anthropic model to use")
-	draftCmd.Flags().StringVar(&draftOpenAI, "openai-model", "gpt-5", "OpenAI model to use")
+	draftCmd.Flags().StringVar(&draftProviders, "providers", "", "comma-separated providers to fan out across (default from config)")
+	draftCmd.Flags().StringVar(&draftAnthropic, "anthropic-model", "", "Anthropic model to use (default from config)")
+	draftCmd.Flags().StringVar(&draftOpenAI, "openai-model", "", "OpenAI model to use (default from config)")
 	draftCmd.Flags().StringVar(&draftRender, "render", "", "output format: json | markdown (default: markdown in TTY, json when piped)")
 	draftCmd.Flags().BoolVar(&draftDryRun, "dry-run", false, "render the prompt only, do not call the LLM")
 	draftCmd.Flags().BoolVar(&draftRefresh, "refresh", false, "force fresh Reddit fetch, bypass cache")

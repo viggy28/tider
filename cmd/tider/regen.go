@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/viggy28/tider/config"
 	"github.com/viggy28/tider/draft"
 	"github.com/viggy28/tider/internal/llm"
 	"github.com/viggy28/tider/internal/types"
@@ -86,7 +87,8 @@ var regenBodyCmd = &cobra.Command{
 }
 
 // setupRegen loads the snapshot for the requested sub and constructs the
-// llm provider refs from --providers / --*-model flags.
+// llm provider refs from --providers / --*-model flags, falling back to
+// config when flags are unset.
 func setupRegen() (*types.Snapshot, []llm.ProviderRef, error) {
 	root, err := lastdraft.Default()
 	if err != nil {
@@ -96,7 +98,23 @@ func setupRegen() (*types.Snapshot, []llm.ProviderRef, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	refs, err := buildProviderRefs(regenProviders, regenAnthropic, regenOpenAI)
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, nil, err
+	}
+	providers := regenProviders
+	if providers == "" {
+		providers = cfg.Defaults.Providers
+	}
+	anthropicModel := regenAnthropic
+	openaiModel := regenOpenAI
+	if anthropicModel == "" {
+		anthropicModel = cfg.LLM.AnthropicModel
+	}
+	if openaiModel == "" {
+		openaiModel = cfg.LLM.OpenAIModel
+	}
+	refs, err := buildProviderRefs(providers, anthropicModel, openaiModel)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -143,9 +161,9 @@ func init() {
 		c.Flags().StringVar(&regenSub, "sub", "", "subreddit (the same one you ran `tider draft --sub` with)")
 		c.Flags().StringVar(&regenNote, "note", "", "guidance for the regeneration (e.g. \"more provocative\")")
 		c.Flags().StringVar(&regenRender, "render", "", "output format: json | markdown (default: markdown in TTY, json when piped)")
-		c.Flags().StringVar(&regenProviders, "providers", "openai,anthropic", "comma-separated providers (must include the providers in the saved bundle)")
-		c.Flags().StringVar(&regenAnthropic, "anthropic-model", "claude-sonnet-4-7", "Anthropic model to use")
-		c.Flags().StringVar(&regenOpenAI, "openai-model", "gpt-5", "OpenAI model to use")
+		c.Flags().StringVar(&regenProviders, "providers", "", "comma-separated providers (default from config)")
+		c.Flags().StringVar(&regenAnthropic, "anthropic-model", "", "Anthropic model to use (default from config)")
+		c.Flags().StringVar(&regenOpenAI, "openai-model", "", "OpenAI model to use (default from config)")
 	}
 	regenTitlesCmd.Flags().IntVar(&regenAngle, "angle", 0, "angle id (e.g. --angle=2)")
 	regenBodyCmd.Flags().StringVar(&regenVariant, "variant", "", "body variant id (e.g. --variant=2.1)")

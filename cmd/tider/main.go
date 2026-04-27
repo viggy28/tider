@@ -20,6 +20,7 @@ func main() {
 	rootCmd.AddCommand(intakeCmd)
 	rootCmd.AddCommand(draftCmd)
 	rootCmd.AddCommand(regenCmd)
+	rootCmd.AddCommand(configCmd)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

@@ -25,6 +25,12 @@ type Options struct {
 	TitlesPerAngle int
 	BodiesPerAngle int
 	MaxTokens      int
+	// AuthorContext is the user's voice/background — what they've built,
+	// what experiences inform their take, what tone they want drafts in.
+	// Empty means generic developer-tone; loaded from ~/.tider/config.yaml's
+	// author_context field. Flows into the draft prompt so generated copy
+	// references real lived experience.
+	AuthorContext string
 }
 
 // Default is the spec's "2 angles × 3 titles × 2 bodies" — ~12 artifacts.
@@ -76,6 +82,7 @@ func RenderPrompt(brief types.Brief, research types.Research, opts Options) (str
 		AngleCount     int
 		TitlesPerAngle int
 		BodiesPerAngle int
+		AuthorContext  string
 	}{
 		SubName:        research.Sub.Name,
 		Subscribers:    research.Sub.Subscribers,
@@ -90,6 +97,7 @@ func RenderPrompt(brief types.Brief, research types.Research, opts Options) (str
 		AngleCount:     opts.AngleCount,
 		TitlesPerAngle: opts.TitlesPerAngle,
 		BodiesPerAngle: opts.BodiesPerAngle,
+		AuthorContext:  opts.AuthorContext,
 	})
 	if err != nil {
 		return "", fmt.Errorf("render draft prompt: %w", err)
