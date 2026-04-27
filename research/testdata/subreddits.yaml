@@ -1,0 +1,23 @@
+subs:
+  - name: golang
+    tone: "technical, terse, hype-allergic"
+    self_promo_tolerance: low
+    format_preferences:
+      - "self-posts > link posts"
+      - "code blocks expected for technical claims"
+    flair:
+      required: true
+      common: ["discussion", "show & tell"]
+    do_not:
+      - "no 'I built X' show-offs without code"
+    notes: |
+      Mods are active. Showcase posts without substance get removed.
+    exemplar_urls: []
+  - name: PostgreSQL
+    tone: "engineering-focused"
+    self_promo_tolerance: medium
+    flair:
+      required: false
+      common: []
+    notes: |
+      Smaller community. Goes deep on internals.

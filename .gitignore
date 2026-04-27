@@ -1,0 +1,4 @@
+/tider
+/cmd/tider/tider
+*.out
+.DS_Store
