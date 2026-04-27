@@ -63,6 +63,27 @@ type SubsConfig struct {
 	Subs []SubNotes `yaml:"subs"`
 }
 
+// BriefSource records how a Brief was created.
+type BriefSource struct {
+	Mode  string `json:"mode"`  // "url" | "file" | "topic"
+	Value string `json:"value"` // the URL, file path, or topic string
+}
+
+// Brief is the structured intake output: source material distilled into
+// fields that drafting downstream consumes. Title/Summary/Highlights/
+// Audience/Links are LLM-extracted from the raw input; RawContent is
+// preserved verbatim so later steps can pull additional context.
+type Brief struct {
+	Source     BriefSource `json:"source"`
+	Title      string      `json:"title"`
+	Summary    string      `json:"summary"`
+	Highlights []string    `json:"highlights"`
+	Audience   string      `json:"audience,omitempty"`
+	Links      []string    `json:"links,omitempty"`
+	RawContent string      `json:"raw_content,omitempty"`
+	CreatedAt  time.Time   `json:"created_at"`
+}
+
 // Research is the assembled per-sub bundle: live Reddit data + curated notes.
 type Research struct {
 	Sub       Subreddit `json:"sub"`
