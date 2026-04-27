@@ -15,6 +15,7 @@ import (
 	"github.com/viggy28/tider/internal/llm"
 	"github.com/viggy28/tider/internal/reddit"
 	"github.com/viggy28/tider/internal/types"
+	"github.com/viggy28/tider/lastdraft"
 	"github.com/viggy28/tider/research"
 )
 
@@ -108,6 +109,16 @@ without a key are skipped with a warning rather than failing the run.`,
 		bundle, err := draft.Generate(ctx, refs, *brief, *researchBundle, opts)
 		if err != nil {
 			return err
+		}
+
+		// Persist snapshot so `tider regen` can pick up where we left off.
+		// A failure here shouldn't block the user from seeing the bundle —
+		// log to stderr and proceed.
+		if root, derr := lastdraft.Default(); derr == nil {
+			snap := &types.Snapshot{Brief: *brief, Research: *researchBundle, Bundle: *bundle}
+			if serr := lastdraft.Save(root, draftSub, snap); serr != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to save last-draft snapshot: %v\n", serr)
+			}
 		}
 
 		switch draftRender {

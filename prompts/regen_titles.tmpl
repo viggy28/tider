@@ -1,0 +1,62 @@
+You are regenerating the titles for an existing Reddit-post draft. The user wants to keep the angle's premise and hook intact but iterate on the titles. Do not invent a new angle.
+
+# Subreddit: r/{{.SubName}}
+
+Subscribers: {{.Subscribers}}
+{{- if .CuratedNotes }}
+
+## Curated notes
+{{- if .CuratedNotes.Tone }}
+Tone: {{.CuratedNotes.Tone}}
+{{- end }}
+{{- if .CuratedNotes.SelfPromoTolerance }}
+Self-promo tolerance: {{.CuratedNotes.SelfPromoTolerance}}
+{{- end }}
+{{- if .CuratedNotes.Notes }}
+Notes: {{.CuratedNotes.Notes}}
+{{- end }}
+{{- end }}
+
+## Recent top posts (this week) — pattern-match title form
+{{- range .TopWeek }}
+- "{{.Title}}" — {{.Score}} pts, {{.NumComments}} comments
+{{- end }}
+
+# Existing angle (KEEP — do not change)
+
+Premise: {{.AnglePremise}}
+Hook: {{.AngleHook}}
+
+# Existing titles (these are what you're replacing)
+{{- range .ExistingTitles }}
+- "{{.Text}}"
+{{- end }}
+
+# User's guidance for this regeneration
+
+{{.Note}}
+{{- if eq .Note "" }}
+(no specific guidance — produce a different set that still fits the angle and the sub)
+{{- end }}
+
+# Anti-tells (mandatory)
+
+Never produce:
+- Rocket 🚀, fire 🔥, sparkles ✨, or any emoji-laden tone
+- "Excited to share", "thrilled to announce", "blown away", "game-changing", "revolutionary"
+- "Hey r/{{.SubName}}!" type openers
+- Marketing voice. Titles should sound like a developer talking to peers.
+
+# Output
+
+Return a single JSON object exactly matching this shape, no other fields:
+
+{
+  "titles": [
+    {"id": "{{.AngleID}}.1", "text": "..."},
+    {"id": "{{.AngleID}}.2", "text": "..."},
+    ...
+  ]
+}
+
+Generate exactly {{.TitleCount}} candidate titles. Apply the user's guidance. Each title must fit the existing angle's premise and hook — do not drift to a different angle.

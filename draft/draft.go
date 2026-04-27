@@ -50,13 +50,10 @@ func Full() Options {
 	}
 }
 
-// ProviderRef pairs a Provider with the model name to record in output.
-// Model is reported back in the Draft so the user knows which model
-// produced which framing.
-type ProviderRef struct {
-	Provider llm.Provider
-	Model    string
-}
+// ProviderRef is an alias of llm.ProviderRef kept for back-compat with
+// callers that already import draft.ProviderRef. New code should use
+// llm.ProviderRef directly so draft and regen share a type.
+type ProviderRef = llm.ProviderRef
 
 // RenderPrompt produces the user-facing prompt the LLM will see. Exposed
 // so `--dry-run` can print it without burning a real API call.
