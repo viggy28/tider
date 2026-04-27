@@ -28,22 +28,25 @@ type Options struct {
 }
 
 // Default is the spec's "2 angles × 3 titles × 2 bodies" — ~12 artifacts.
+// MaxTokens sized for reasoning models (gpt-5, o-series): real-run usage
+// has been ~5K output tokens, so 10K leaves headroom for reasoning.
 func Default() Options {
 	return Options{
 		AngleCount:     2,
 		TitlesPerAngle: 3,
 		BodiesPerAngle: 2,
-		MaxTokens:      4096,
+		MaxTokens:      10000,
 	}
 }
 
-// Full is the wider "3 × 5 × 3" spread for when the user wants more options.
+// Full is the wider "3 × 5 × 3" spread — ~33 artifacts. Bump max tokens
+// proportionally.
 func Full() Options {
 	return Options{
 		AngleCount:     3,
 		TitlesPerAngle: 5,
 		BodiesPerAngle: 3,
-		MaxTokens:      8192,
+		MaxTokens:      16384,
 	}
 }
 

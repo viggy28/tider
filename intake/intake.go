@@ -31,6 +31,10 @@ func New(p llm.Provider) *Intake {
 		UserAgent: DefaultUserAgent,
 		Provider:  p,
 		MaxBytes:  256 * 1024,
-		MaxTokens: 2048,
+		// 8192 by default so reasoning models (gpt-5, o-series) don't spend
+		// the whole budget on internal reasoning and return empty content.
+		// Non-reasoning models won't use it all — token budget is a cap, not
+		// a target.
+		MaxTokens: 8192,
 	}
 }

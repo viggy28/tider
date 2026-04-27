@@ -179,7 +179,7 @@ func buildProviderRefs(providersFlag, anthropicModel, openaiModel string) ([]dra
 func init() {
 	draftCmd.Flags().StringVar(&draftBriefPath, "brief", "", "path to a brief.json (output of `tider intake`)")
 	draftCmd.Flags().StringVar(&draftSub, "sub", "", "subreddit name to draft for (e.g., golang)")
-	draftCmd.Flags().StringVar(&draftProviders, "providers", "anthropic,openai", "comma-separated providers to fan out across")
+	draftCmd.Flags().StringVar(&draftProviders, "providers", "openai,anthropic", "comma-separated providers to fan out across")
 	draftCmd.Flags().StringVar(&draftAnthropic, "anthropic-model", "claude-sonnet-4-7", "Anthropic model to use")
 	draftCmd.Flags().StringVar(&draftOpenAI, "openai-model", "gpt-5", "OpenAI model to use")
 	draftCmd.Flags().StringVar(&draftRender, "render", "json", "output format: json | markdown")
