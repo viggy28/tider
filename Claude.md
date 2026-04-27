@@ -18,30 +18,32 @@ If a future feature request would require Reddit write access, refuse and refere
 
 - Go 1.22+
 - `github.com/spf13/cobra` — CLI
-- `github.com/spf13/viper` — config
-- Official Anthropic Go SDK
-- Official OpenAI Go SDK
-- `github.com/yuin/goldmark` — markdown rendering
-- Stdlib for HTTP, JSON, caching, cache management
+- `gopkg.in/yaml.v3` — config (`~/.tider/config.yaml`) and curated sub notes (`~/.tider/subreddits.yaml`)
+- Stdlib for HTTP, JSON, caching, terminal markdown rendering
 
-No Reddit SDK. Public JSON endpoints via stdlib `net/http` only.
+**No SDKs — for any external service.** Reddit, Anthropic, and OpenAI are all called via stdlib `net/http` with `encoding/json` for decoding. Decided against provider SDKs to keep the dependency surface flat and the wire shape explicit; the `Provider` interface in `internal/llm/` is the only abstraction we need.
+
+The same minimalism applies to terminal output: rather than pulling `glamour`/`lipgloss` (~40 transitive deps) for markdown rendering, `cmd/tider/term.go` is a ~150 LOC ANSI renderer for the specific subset our `draft.RenderMarkdown` produces. We control both producer and renderer; a general-purpose engine isn't justified.
 
 ---
 
 ## Architecture
 
 ```
-cmd/tider/               CLI entry (cobra)
+cmd/tider/               CLI entry (cobra) + ANSI terminal renderer
+config/                  ~/.tider/config.yaml loader (per-task models, author_context)
 intake/                  URL | topic | file → Brief
 research/                Layered: subreddits.yaml + tiered cache + Reddit JSON
 draft/                   Brief + research → structured Draft (JSON)
-                         Renderer: Draft → reviewable markdown
-suggest/                 Brief → candidate subs
-engage/                  watch (triage) + reply (drafter), read-only
+                         Renderer: Draft → reviewable markdown (ANSI in TTY)
+regen/                   Scoped re-rolls (titles, body) spliced into existing draft
+lastdraft/               ~/.tider/last/{sub}.json snapshot — between draft and regen
+suggest/                 (planned, not built) Brief → candidate subs
+engage/                  (planned, not built) watch (triage) + reply (drafter), read-only
 internal/reddit/         JSON client, User-Agent, backoff, tiered cache
-internal/llm/            Provider-agnostic interface + Anthropic + OpenAI
-internal/types/          Brief, Subreddit, Post, Rule, Draft, Reply, Session
-prompts/                 Versioned prompt templates
+internal/llm/            Provider-agnostic interface + Anthropic + OpenAI + factory
+internal/types/          Brief, Subreddit, Post, Rule, Flair, Draft, DraftBundle, Snapshot
+prompts/                 Versioned prompt templates (go:embed FS)
 ```
 
 ---
@@ -104,19 +106,30 @@ TTL per file (tracked in `_meta.json`):
 
 ---
 
-## Session layout
+## State layout
+
+### Current — last-draft cache (`lastdraft` package)
+
+```
+~/.tider/last/{sub}.json   # Snapshot: Brief + Research + DraftBundle
+                           # written by `tider draft --sub=X`
+                           # read + overwritten by `tider regen ... --sub=X`
+```
+
+Atomic write (temp + rename). Each successful regen overwrites so subsequent regens iterate on the latest state.
+
+### Planned — full session layout (deferred)
 
 ```
 ~/.tider/projects/{project}/sessions/{date}-{slug}/
   brief.md
   research/{sub}.json
-  drafts/{sub}.json    # structured
-  drafts/{sub}.md      # rendered for review
-  history.jsonl        # every regen with prompt + diff
+  drafts/{sub}.json        # structured
+  drafts/{sub}.md          # rendered for review
+  history.jsonl            # every regen with prompt + diff
 ```
 
-`{project}` from config `projects.default` (default: `streambed`) or `--project` flag.
-`{date}` auto-prepended to `--session=launch` → `2026-04-26-launch`.
+Sessions group artifacts across many subs and many regen iterations within a single posting initiative (e.g. a launch push across 6 subs). The current `lastdraft` cache is the smallest thing that makes regen ergonomic; full sessions land when the `history.jsonl` audit trail or multi-sub state actually matters. `{project}` and `{date}-{slug}` semantics from the original plan still apply.
 
 ---
 
@@ -153,7 +166,9 @@ type Provider interface {
 }
 ```
 
-Provider implementations live alongside: `anthropic.go`, `openai.go`. Factory in `factory.go` reads config and returns the right provider.
+Provider implementations live alongside: `anthropic.go`, `openai.go`. Factory in `factory.go` reads config and returns the right provider. `llm.ProviderRef` (provider + model) is the shared type used by callers that fan out (draft, regen).
+
+**Default provider/model: OpenAI `gpt-5`.** Override per-task in `~/.tider/config.yaml`, or per-call with `--provider` / `--model` flags. Per-task config supports different models for cheap extraction (intake → `gpt-4o-mini`) vs heavy reasoning (draft, regen → `gpt-5`). See `tider config show`.
 
 ---
 
