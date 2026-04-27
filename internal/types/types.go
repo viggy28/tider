@@ -84,6 +84,79 @@ type Brief struct {
 	CreatedAt  time.Time   `json:"created_at"`
 }
 
+// Risk ratings on a Draft. "refuse" means the LLM declined to generate
+// content because the sub's culture would reject this kind of post; the
+// reason goes in RiskReason and Angles must be empty.
+const (
+	RiskLow    = "low"
+	RiskMedium = "medium"
+	RiskHigh   = "high"
+	RiskRefuse = "refuse"
+)
+
+type Title struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
+}
+
+type Body struct {
+	ID   string   `json:"id"`
+	Text string   `json:"text"`
+	Tags []string `json:"tags,omitempty"` // e.g., "opener:question", "close:invite-stories"
+}
+
+type Angle struct {
+	ID      int     `json:"id"`
+	Premise string  `json:"premise"`
+	Hook    string  `json:"hook"`
+	Titles  []Title `json:"titles"`
+	Bodies  []Body  `json:"bodies"`
+}
+
+type Recommendation struct {
+	AngleID   int    `json:"angle_id"`
+	TitleID   string `json:"title_id"`
+	BodyID    string `json:"body_id"`
+	Reasoning string `json:"reasoning,omitempty"`
+}
+
+type FlairRec struct {
+	Required  bool   `json:"required"`
+	Suggested string `json:"suggested,omitempty"`
+}
+
+// Draft is one provider's output: angles + titles + bodies + meta. The
+// full DraftBundle holds N of these (one per provider) for side-by-side
+// comparison.
+type Draft struct {
+	Sub                 string         `json:"sub"`
+	Provider            string         `json:"provider"`
+	Model               string         `json:"model"`
+	Risk                string         `json:"risk"`
+	RiskReason          string         `json:"risk_reason,omitempty"`
+	Angles              []Angle        `json:"angles"`
+	Recommendation      Recommendation `json:"recommendation"`
+	Flair               FlairRec       `json:"flair"`
+	SuggestedWindow     string         `json:"suggested_window,omitempty"`
+	MediaRecommendation string         `json:"media_recommendation,omitempty"`
+	InputTokens         int            `json:"input_tokens,omitempty"`
+	OutputTokens        int            `json:"output_tokens,omitempty"`
+	Generated           time.Time      `json:"generated"`
+	// Error is set if this provider's generation failed; the bundle keeps
+	// the entry so the user can see which provider broke and why.
+	Error string `json:"error,omitempty"`
+}
+
+// DraftBundle holds drafts produced by N providers for one (Brief, Sub)
+// pair. Drafts are intentionally a slice — comparing across providers is
+// the entire point of this step.
+type DraftBundle struct {
+	Sub       string    `json:"sub"`
+	Brief     Brief     `json:"brief"`
+	Drafts    []Draft   `json:"drafts"`
+	Generated time.Time `json:"generated"`
+}
+
 // Research is the assembled per-sub bundle: live Reddit data + curated notes.
 type Research struct {
 	Sub       Subreddit `json:"sub"`

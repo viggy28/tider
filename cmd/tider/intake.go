@@ -67,7 +67,7 @@ API key for the chosen provider must be set in the environment
 func init() {
 	intakeCmd.Flags().StringVar(&intakeURL, "url", "", "URL to a blog post or GitHub repo")
 	intakeCmd.Flags().StringVar(&intakeFile, "file", "", "path to a markdown brief")
-	intakeCmd.Flags().StringVar(&intakeProvider, "provider", "anthropic", "LLM provider: anthropic | openai")
-	intakeCmd.Flags().StringVar(&intakeModel, "model", "claude-sonnet-4-7", "LLM model name")
-	intakeCmd.Flags().IntVar(&intakeMaxTokens, "max-tokens", 0, "LLM completion budget; 0 uses package default (2048). Bump for reasoning models.")
+	intakeCmd.Flags().StringVar(&intakeProvider, "provider", "openai", "LLM provider: anthropic | openai")
+	intakeCmd.Flags().StringVar(&intakeModel, "model", "gpt-5", "LLM model name")
+	intakeCmd.Flags().IntVar(&intakeMaxTokens, "max-tokens", 0, "LLM completion budget; 0 uses package default (8192).")
 }

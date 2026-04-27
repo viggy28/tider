@@ -1,0 +1,195 @@
+// Package draft turns a Brief + Research into per-provider Drafts so the
+// user can compare framings side-by-side before posting.
+package draft
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sync"
+	"text/template"
+	"time"
+
+	"github.com/viggy28/tider/internal/llm"
+	"github.com/viggy28/tider/internal/types"
+	"github.com/viggy28/tider/prompts"
+)
+
+var draftTmpl = template.Must(template.ParseFS(prompts.FS, "draft.tmpl"))
+
+// Options control variant counts and the LLM token budget.
+type Options struct {
+	AngleCount     int
+	TitlesPerAngle int
+	BodiesPerAngle int
+	MaxTokens      int
+}
+
+// Default is the spec's "2 angles × 3 titles × 2 bodies" — ~12 artifacts.
+// MaxTokens sized for reasoning models (gpt-5, o-series): real-run usage
+// has been ~5K output tokens, so 10K leaves headroom for reasoning.
+func Default() Options {
+	return Options{
+		AngleCount:     2,
+		TitlesPerAngle: 3,
+		BodiesPerAngle: 2,
+		MaxTokens:      10000,
+	}
+}
+
+// Full is the wider "3 × 5 × 3" spread — ~33 artifacts. Bump max tokens
+// proportionally.
+func Full() Options {
+	return Options{
+		AngleCount:     3,
+		TitlesPerAngle: 5,
+		BodiesPerAngle: 3,
+		MaxTokens:      16384,
+	}
+}
+
+// ProviderRef pairs a Provider with the model name to record in output.
+// Model is reported back in the Draft so the user knows which model
+// produced which framing.
+type ProviderRef struct {
+	Provider llm.Provider
+	Model    string
+}
+
+// RenderPrompt produces the user-facing prompt the LLM will see. Exposed
+// so `--dry-run` can print it without burning a real API call.
+func RenderPrompt(brief types.Brief, research types.Research, opts Options) (string, error) {
+	if opts.AngleCount <= 0 || opts.TitlesPerAngle <= 0 || opts.BodiesPerAngle <= 0 {
+		return "", fmt.Errorf("draft: variant counts must be > 0")
+	}
+	var buf bytes.Buffer
+	err := draftTmpl.Execute(&buf, struct {
+		SubName        string
+		Subscribers    int
+		CuratedNotes   *types.SubNotes
+		Rules          []types.Rule
+		TopWeek        []types.Post
+		TopMonth       []types.Post
+		Hot            []types.Post
+		Stickies       []types.Post
+		Flairs         []types.Flair
+		Brief          types.Brief
+		AngleCount     int
+		TitlesPerAngle int
+		BodiesPerAngle int
+	}{
+		SubName:        research.Sub.Name,
+		Subscribers:    research.Sub.Subscribers,
+		CuratedNotes:   research.Notes,
+		Rules:          research.Rules,
+		TopWeek:        research.TopWeek,
+		TopMonth:       research.TopMonth,
+		Hot:            research.Hot,
+		Stickies:       research.Stickies,
+		Flairs:         research.Flairs,
+		Brief:          brief,
+		AngleCount:     opts.AngleCount,
+		TitlesPerAngle: opts.TitlesPerAngle,
+		BodiesPerAngle: opts.BodiesPerAngle,
+	})
+	if err != nil {
+		return "", fmt.Errorf("render draft prompt: %w", err)
+	}
+	return buf.String(), nil
+}
+
+// Generate fans out across providers concurrently and returns the bundle.
+// Per-provider errors are recorded on the Draft (not propagated) so a
+// transient failure in one provider doesn't kill the whole comparison.
+func Generate(ctx context.Context, refs []ProviderRef, brief types.Brief, research types.Research, opts Options) (*types.DraftBundle, error) {
+	if len(refs) == 0 {
+		return nil, errors.New("draft: at least one provider required")
+	}
+	prompt, err := RenderPrompt(brief, research, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	drafts := make([]types.Draft, len(refs))
+	var wg sync.WaitGroup
+	for i, ref := range refs {
+		wg.Add(1)
+		go func(i int, ref ProviderRef) {
+			defer wg.Done()
+			drafts[i] = generateOne(ctx, ref, research.Sub.Name, prompt, opts.MaxTokens)
+		}(i, ref)
+	}
+	wg.Wait()
+
+	return &types.DraftBundle{
+		Sub:       research.Sub.Name,
+		Brief:     brief,
+		Drafts:    drafts,
+		Generated: time.Now().UTC(),
+	}, nil
+}
+
+func generateOne(ctx context.Context, ref ProviderRef, sub, prompt string, maxTokens int) types.Draft {
+	d := types.Draft{
+		Sub:       sub,
+		Provider:  ref.Provider.Name(),
+		Model:     ref.Model,
+		Generated: time.Now().UTC(),
+	}
+	resp, err := ref.Provider.Complete(ctx, llm.Request{
+		Model:     ref.Model,
+		MaxTokens: maxTokens,
+		JSONMode:  true,
+		Messages:  []llm.Message{{Role: llm.RoleUser, Content: prompt}},
+	})
+	if err != nil {
+		d.Error = err.Error()
+		return d
+	}
+	d.InputTokens = resp.InputTokens
+	d.OutputTokens = resp.OutputTokens
+	if err := parseInto(&d, resp.Content); err != nil {
+		d.Error = err.Error()
+	}
+	return d
+}
+
+// parseInto unmarshals the LLM JSON into d, preserving Provider/Model/etc.
+// fields already set on the struct. Strict on shape but tolerant on extras.
+func parseInto(d *types.Draft, raw string) error {
+	if raw == "" {
+		return errors.New("empty response")
+	}
+	var payload struct {
+		Risk                string                `json:"risk"`
+		RiskReason          string                `json:"risk_reason"`
+		Angles              []types.Angle         `json:"angles"`
+		Recommendation      types.Recommendation  `json:"recommendation"`
+		Flair               types.FlairRec        `json:"flair"`
+		SuggestedWindow     string                `json:"suggested_window"`
+		MediaRecommendation string                `json:"media_recommendation"`
+	}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return fmt.Errorf("parse draft json: %w (model returned: %q)", err, truncate(raw, 200))
+	}
+	if payload.Risk == "" {
+		return errors.New("draft missing required field: risk")
+	}
+	d.Risk = payload.Risk
+	d.RiskReason = payload.RiskReason
+	d.Angles = payload.Angles
+	d.Recommendation = payload.Recommendation
+	d.Flair = payload.Flair
+	d.SuggestedWindow = payload.SuggestedWindow
+	d.MediaRecommendation = payload.MediaRecommendation
+	return nil
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
