@@ -121,14 +121,14 @@ without a key are skipped with a warning rather than failing the run.`,
 			}
 		}
 
-		switch draftRender {
+		switch resolveRender(draftRender) {
 		case "markdown":
 			md := draft.RenderMarkdown(bundle)
 			if isTerminal(os.Stdout) {
 				md = renderTerminal(md)
 			}
 			fmt.Print(md)
-		case "json", "":
+		case "json":
 			out, err := json.MarshalIndent(bundle, "", "  ")
 			if err != nil {
 				return err
@@ -197,7 +197,7 @@ func init() {
 	draftCmd.Flags().StringVar(&draftProviders, "providers", "openai,anthropic", "comma-separated providers to fan out across")
 	draftCmd.Flags().StringVar(&draftAnthropic, "anthropic-model", "claude-sonnet-4-7", "Anthropic model to use")
 	draftCmd.Flags().StringVar(&draftOpenAI, "openai-model", "gpt-5", "OpenAI model to use")
-	draftCmd.Flags().StringVar(&draftRender, "render", "json", "output format: json | markdown")
+	draftCmd.Flags().StringVar(&draftRender, "render", "", "output format: json | markdown (default: markdown in TTY, json when piped)")
 	draftCmd.Flags().BoolVar(&draftDryRun, "dry-run", false, "render the prompt only, do not call the LLM")
 	draftCmd.Flags().BoolVar(&draftRefresh, "refresh", false, "force fresh Reddit fetch, bypass cache")
 	draftCmd.Flags().StringVar(&draftNotesPath, "notes", "", "path to subreddits.yaml (default ~/.tider/subreddits.yaml)")

@@ -119,14 +119,14 @@ func finishRegen(snap *types.Snapshot, bundle *types.DraftBundle) error {
 	if err := lastdraft.Save(root, regenSub, snap); err != nil {
 		return err
 	}
-	switch regenRender {
+	switch resolveRender(regenRender) {
 	case "markdown":
 		md := draft.RenderMarkdown(bundle)
 		if isTerminal(os.Stdout) {
 			md = renderTerminal(md)
 		}
 		fmt.Print(md)
-	case "json", "":
+	case "json":
 		out, err := json.MarshalIndent(bundle, "", "  ")
 		if err != nil {
 			return err
@@ -142,7 +142,7 @@ func init() {
 	for _, c := range []*cobra.Command{regenTitlesCmd, regenBodyCmd} {
 		c.Flags().StringVar(&regenSub, "sub", "", "subreddit (the same one you ran `tider draft --sub` with)")
 		c.Flags().StringVar(&regenNote, "note", "", "guidance for the regeneration (e.g. \"more provocative\")")
-		c.Flags().StringVar(&regenRender, "render", "json", "output format: json | markdown")
+		c.Flags().StringVar(&regenRender, "render", "", "output format: json | markdown (default: markdown in TTY, json when piped)")
 		c.Flags().StringVar(&regenProviders, "providers", "openai,anthropic", "comma-separated providers (must include the providers in the saved bundle)")
 		c.Flags().StringVar(&regenAnthropic, "anthropic-model", "claude-sonnet-4-7", "Anthropic model to use")
 		c.Flags().StringVar(&regenOpenAI, "openai-model", "gpt-5", "OpenAI model to use")

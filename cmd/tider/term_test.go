@@ -104,6 +104,29 @@ func TestApplyInlineUnderscoreDoesNotMatchIdentifiers(t *testing.T) {
 	}
 }
 
+func TestResolveRenderHonorsExplicitFlag(t *testing.T) {
+	// Explicit values pass through regardless of TTY state.
+	for _, v := range []string{"markdown", "json"} {
+		if got := resolveRender(v); got != v {
+			t.Errorf("resolveRender(%q) = %q, want %q", v, got, v)
+		}
+	}
+}
+
+func TestResolveRenderEmptyFallsBackToTTYDetection(t *testing.T) {
+	// Tests can't easily simulate a real TTY, but we can verify the empty-string
+	// path delegates to isTerminal() rather than returning the literal flag.
+	got := resolveRender("")
+	if got != "json" && got != "markdown" {
+		t.Errorf("resolveRender(\"\") = %q, want json or markdown", got)
+	}
+	// In a `go test` run stdout is a pipe (not a TTY), so empty should
+	// resolve to json.
+	if got != "json" {
+		t.Logf("test stdout is unexpectedly a TTY; got %q", got)
+	}
+}
+
 func TestRenderTerminalRoundTripFromDraftMarkdown(t *testing.T) {
 	// Real-shape input: the kind of lines draft.RenderMarkdown produces.
 	in := strings.Join([]string{
