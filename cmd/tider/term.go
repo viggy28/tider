@@ -69,6 +69,20 @@ func applyInline(s string) string {
 	return s
 }
 
+// resolveRender picks the output format when --render isn't set explicitly:
+// markdown when stdout is a terminal (and we'll ANSI-style it),
+// json when stdout is piped/redirected (so jq, files, downstream tools
+// see clean structured output).
+func resolveRender(flagVal string) string {
+	if flagVal != "" {
+		return flagVal
+	}
+	if isTerminal(os.Stdout) {
+		return "markdown"
+	}
+	return "json"
+}
+
 // isTerminal reports whether f is connected to an interactive terminal.
 // Used to decide whether to ANSI-render markdown output: TTY → rendered,
 // pipe/redirect → raw markdown so downstream tooling sees clean text.
