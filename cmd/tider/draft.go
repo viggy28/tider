@@ -112,7 +112,11 @@ without a key are skipped with a warning rather than failing the run.`,
 
 		switch draftRender {
 		case "markdown":
-			fmt.Print(draft.RenderMarkdown(bundle))
+			md := draft.RenderMarkdown(bundle)
+			if isTerminal(os.Stdout) {
+				md = renderTerminal(md)
+			}
+			fmt.Print(md)
 		case "json", "":
 			out, err := json.MarshalIndent(bundle, "", "  ")
 			if err != nil {
