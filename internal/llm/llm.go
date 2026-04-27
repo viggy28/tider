@@ -37,3 +37,11 @@ type Provider interface {
 	Name() string
 	Complete(ctx context.Context, req Request) (*Response, error)
 }
+
+// ProviderRef pairs a Provider implementation with the model name to use
+// for completions. Used by callers that fan out across multiple providers
+// (draft, regen) and need to record which model produced which output.
+type ProviderRef struct {
+	Provider Provider
+	Model    string
+}

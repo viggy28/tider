@@ -19,6 +19,7 @@ func main() {
 	rootCmd.AddCommand(researchCmd)
 	rootCmd.AddCommand(intakeCmd)
 	rootCmd.AddCommand(draftCmd)
+	rootCmd.AddCommand(regenCmd)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

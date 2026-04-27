@@ -1,0 +1,78 @@
+You are regenerating a single body for an existing Reddit-post draft. Keep the angle's premise, hook, the title, and any other variants intact. Only the specified body changes.
+
+# Subreddit: r/{{.SubName}}
+
+Subscribers: {{.Subscribers}}
+{{- if .CuratedNotes }}
+
+## Curated notes
+{{- if .CuratedNotes.Tone }}
+Tone: {{.CuratedNotes.Tone}}
+{{- end }}
+{{- if .CuratedNotes.SelfPromoTolerance }}
+Self-promo tolerance: {{.CuratedNotes.SelfPromoTolerance}}
+{{- end }}
+{{- if .CuratedNotes.Notes }}
+Notes: {{.CuratedNotes.Notes}}
+{{- end }}
+{{- end }}
+
+## Recent top posts (this week) — pattern-match body form (length, structure, link-vs-self, tone)
+{{- range .TopWeek }}
+- "{{.Title}}" — {{.Score}} pts, {{.NumComments}} comments
+{{- end }}
+
+# Angle context (KEEP)
+
+Premise: {{.AnglePremise}}
+Hook: {{.AngleHook}}
+
+# Title this body sits under (KEEP)
+
+{{.TitleText}}
+
+# Existing body (this is what you're replacing)
+
+ID: {{.BodyID}}
+{{- if .BodyTags }}
+Tags: {{range $i, $t := .BodyTags}}{{if $i}}, {{end}}{{$t}}{{end}}
+{{- end }}
+
+---
+{{.BodyText}}
+---
+
+# User's guidance for this regeneration
+
+{{.Note}}
+{{- if eq .Note "" }}
+(no specific guidance — produce a different framing that still fits the angle, hook, and title)
+{{- end }}
+{{- if .LengthHint }}
+
+Target length: ~{{.LengthHint}} words.
+{{- end }}
+
+# Anti-tells (mandatory)
+
+Never produce:
+- Rocket 🚀, fire 🔥, sparkles ✨, or any emoji-laden tone
+- "Excited to share", "thrilled to announce", "blown away", "game-changing", "revolutionary"
+- "Hey r/{{.SubName}}!" type openers
+- Three-bullet feature dumps as the body
+- "Let me know if you have any questions/feedback!" closes
+- Marketing voice. Posts should sound like a developer talking to peers about something they actually built or used.
+
+# Output
+
+Return a single JSON object exactly matching this shape, no other fields:
+
+{
+  "body": {
+    "id": "{{.BodyID}}",
+    "text": "...",
+    "tags": ["opener:...", "close:..."]
+  }
+}
+
+Keep the body's ID exactly as given. Tags are short slugs (opener:question, opener:war-story, hook:contrarian, close:invite-stories, etc.) describing the structural choices you made — useful for future scoped regens.

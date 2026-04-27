@@ -157,6 +157,18 @@ type DraftBundle struct {
 	Generated time.Time `json:"generated"`
 }
 
+// Snapshot is what we cache between `tider draft` and `tider regen`. It
+// holds everything regen needs to reconstruct the original context: the
+// Brief, the per-sub Research, and the most recent DraftBundle. Each
+// successful regen overwrites it so subsequent regens iterate on the
+// latest state.
+type Snapshot struct {
+	Brief    Brief       `json:"brief"`
+	Research Research    `json:"research"`
+	Bundle   DraftBundle `json:"bundle"`
+	SavedAt  time.Time   `json:"saved_at"`
+}
+
 // Research is the assembled per-sub bundle: live Reddit data + curated notes.
 type Research struct {
 	Sub       Subreddit `json:"sub"`
