@@ -13,10 +13,11 @@ import (
 )
 
 var (
-	intakeURL  string
-	intakeFile string
-	intakeProvider string
-	intakeModel    string
+	intakeURL       string
+	intakeFile      string
+	intakeProvider  string
+	intakeModel     string
+	intakeMaxTokens int
 )
 
 var intakeCmd = &cobra.Command{
@@ -39,6 +40,9 @@ API key for the chosen provider must be set in the environment
 			return err
 		}
 		i := intake.New(p)
+		if intakeMaxTokens > 0 {
+			i.MaxTokens = intakeMaxTokens
+		}
 
 		ctx := context.Background()
 		var brief *types.Brief
@@ -65,4 +69,5 @@ func init() {
 	intakeCmd.Flags().StringVar(&intakeFile, "file", "", "path to a markdown brief")
 	intakeCmd.Flags().StringVar(&intakeProvider, "provider", "anthropic", "LLM provider: anthropic | openai")
 	intakeCmd.Flags().StringVar(&intakeModel, "model", "claude-sonnet-4-7", "LLM model name")
+	intakeCmd.Flags().IntVar(&intakeMaxTokens, "max-tokens", 0, "LLM completion budget; 0 uses package default (2048). Bump for reasoning models.")
 }
