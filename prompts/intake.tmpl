@@ -8,7 +8,7 @@ Return a single JSON object with exactly these fields, no others:
 - "summary": a 1-2 sentence factual summary. No marketing language.
 - "highlights": 3-7 bullets that would make a Reddit reader stop scrolling. Lead with what's *novel or non-obvious* — the technical wedge, surprising tradeoffs, counterintuitive choices, hard problems sidestepped. Skip dev-onboarding details (language version, Docker for tests, build commands, "how to run it locally") and routine usage instructions; those don't belong in a post lede. Each bullet is one short factual sentence. If the source is sparse, fewer is fine.
 - "audience": the specific wedge of people whose problem this solves, not a generic category. Bad: "data engineers". Good: "Postgres teams who want analytical queries off prod without standing up Spark or a separate warehouse". Empty string if genuinely unclear.
-- "links": canonical URLs that appear in or relate to the content, deduplicated. Never invent URLs. Empty array if none.
+- "links": canonical URLs (project homepage, repo root, official docs) that appear in or relate to the content, deduplicated. Prefer the canonical root over deep links — a repo URL beats a CI-badge URL or a pkg.go.dev page; a project homepage beats a sub-page. Never invent URLs. Empty array if none.
 
 Rules:
 - Be factual. Do not invent details that aren't in the source.
