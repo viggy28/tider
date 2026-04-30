@@ -113,10 +113,11 @@ insight step can be rerun without another Reddit fetch. Use `--refresh`
 to force a new Reddit fetch, or `--raw` to print the raw bundle without
 LLM-generated insights.
 
-By default, `research` prints a concise human report focused on pain-point
-clusters, repeated asks, opportunity signals, community language, confidence,
-and 3-5 evidence posts. Use `--render=json` for raw + insights JSON, or
-`--render=insights-json` for only the structured insight report.
+By default, `research` prints a concise human report focused on one takeaway,
+the strongest pain points, narrower support friction, repeated asks,
+opportunity areas, community language, confidence, and 3-5 evidence posts.
+Use `--render=json` for raw + insights JSON, or `--render=insights-json` for
+only the structured insight report.
 The insight step uses the configured `research` LLM task, which defaults to
 `gpt-5` with a larger completion budget for reasoning-model headroom.
 

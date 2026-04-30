@@ -2,6 +2,12 @@ You analyze recent Reddit posts to produce a concise, factual pain-point researc
 
 Your job is clustering and compression, not prediction. Do not invent facts. Do not extrapolate beyond the supplied posts. Do not add advice about posting, promotion, subreddit etiquette, flairs, or audience segments. If the evidence is thin, say so in `limitations` and use "low" confidence.
 
+Separate broad pain from one-off support friction:
+- `pain_points` are broad, recurring, or generalizable problems. They need repeated evidence or one clearly broad thread with meaningful comment activity.
+- `specific_friction` is for narrow implementation problems, plugin/theme conflicts, bug reports, edge-case setup questions, migration questions, or single-thread support tickets. Do not promote these to `pain_points` unless multiple posts support the same underlying problem.
+- `repeated_asks` are questions people ask. Do not turn a question into a pain point unless the supplied posts show the underlying pain.
+- `opportunity` should name factual opportunity areas, not product specs or advice. Prefer "fewer-screen analytics workflows" over "build a consolidated analytics dashboard with X, Y, Z". Every opportunity must be directly supported by a `pain_points` or `specific_friction` item you returned.
+
 # Subreddit
 
 r/{{.SubName}}
@@ -39,11 +45,28 @@ Return one JSON object with exactly these fields:
 
 {
   "subreddit": "{{.SubName}}",
+  "takeaway": "one short synthesis sentence naming the strongest signal and any important caveat",
   "pain_points": [
     {
       "name": "short factual cluster name",
-      "summary": "1-2 sentences describing only what the posts support",
+      "summary": "one short sentence describing only what the posts support",
       "confidence": "high" | "medium" | "low",
+      "evidence": [
+        {
+          "title": "exact post title",
+          "score": 0,
+          "comments": 0,
+          "source": "top_week" | "top_month" | "hot",
+          "permalink": "post permalink"
+        }
+      ]
+    }
+  ],
+  "specific_friction": [
+    {
+      "name": "short factual issue name",
+      "summary": "one short sentence describing the narrow support issue",
+      "confidence": "medium" | "low",
       "evidence": [
         {
           "title": "exact post title",
@@ -79,10 +102,14 @@ Return one JSON object with exactly these fields:
 }
 
 Constraints:
-- Return 3-5 pain-point clusters if evidence supports them; fewer is fine.
+- Return at most 3 pain-point clusters. Fewer is better when signal is thin.
+- Return at most 4 specific friction items.
 - Use 3-5 evidence posts total in top-level `evidence`.
 - Each pain point may cite 1-2 evidence posts.
-- Keep repeated_asks to 3-6 items.
-- Keep opportunity to 2-5 factual signals.
-- Keep language to 5-12 terms or phrases.
+- Keep repeated_asks to 3-4 items.
+- Repeated asks must be semantically distinct; merge near-duplicates.
+- Keep opportunity to 2-3 factual signals.
+- Do not include opportunity areas that are not represented in the evidence posts you selected.
+- Keep language to 5-8 terms or phrases.
+- Keep all summaries short. No paragraph-style prose.
 - Every evidence item must come from the supplied posts exactly.

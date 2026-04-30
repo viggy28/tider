@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"text/template"
 	"time"
@@ -90,6 +91,7 @@ func GenerateInsights(ctx context.Context, p llm.Provider, model string, r types
 	insights.OutputTokens = resp.OutputTokens
 	insights.Generated = time.Now().UTC()
 	trimInsights(&insights)
+	filterUnsupportedOpportunity(&insights)
 	fillTopLevelEvidence(&insights)
 	return &insights, nil
 }
@@ -135,17 +137,20 @@ func selectPromptPosts(r types.Research, limit int) []insightPromptPost {
 }
 
 func trimInsights(i *types.ResearchInsights) {
-	if len(i.PainPoints) > 5 {
-		i.PainPoints = i.PainPoints[:5]
+	if len(i.PainPoints) > 3 {
+		i.PainPoints = i.PainPoints[:3]
 	}
-	if len(i.RepeatedAsks) > 6 {
-		i.RepeatedAsks = i.RepeatedAsks[:6]
+	if len(i.SpecificFriction) > 4 {
+		i.SpecificFriction = i.SpecificFriction[:4]
 	}
-	if len(i.Opportunity) > 5 {
-		i.Opportunity = i.Opportunity[:5]
+	if len(i.RepeatedAsks) > 4 {
+		i.RepeatedAsks = i.RepeatedAsks[:4]
 	}
-	if len(i.Language) > 12 {
-		i.Language = i.Language[:12]
+	if len(i.Opportunity) > 3 {
+		i.Opportunity = i.Opportunity[:3]
+	}
+	if len(i.Language) > 8 {
+		i.Language = i.Language[:8]
 	}
 	if len(i.Evidence) > 5 {
 		i.Evidence = i.Evidence[:5]
@@ -155,6 +160,56 @@ func trimInsights(i *types.ResearchInsights) {
 			i.PainPoints[pi].Evidence = i.PainPoints[pi].Evidence[:2]
 		}
 	}
+	for fi := range i.SpecificFriction {
+		if len(i.SpecificFriction[fi].Evidence) > 1 {
+			i.SpecificFriction[fi].Evidence = i.SpecificFriction[fi].Evidence[:1]
+		}
+	}
+}
+
+var wordRE = regexp.MustCompile(`[A-Za-z][A-Za-z0-9-]{2,}`)
+
+var opportunityStopWords = map[string]bool{
+	"and": true, "are": true, "but": true, "can": true, "for": true, "from": true,
+	"has": true, "into": true, "not": true, "that": true, "the": true, "their": true,
+	"this": true, "with": true, "within": true, "without": true, "workflow": true,
+	"workflows": true, "woocommerce": true, "woo": true,
+}
+
+func filterUnsupportedOpportunity(i *types.ResearchInsights) {
+	if len(i.Opportunity) == 0 {
+		return
+	}
+	supported := map[string]bool{}
+	add := func(s string) {
+		for _, w := range wordRE.FindAllString(strings.ToLower(s), -1) {
+			if !opportunityStopWords[w] {
+				supported[w] = true
+			}
+		}
+	}
+	for _, p := range i.PainPoints {
+		add(p.Name)
+		add(p.Summary)
+	}
+	for _, f := range i.SpecificFriction {
+		add(f.Name)
+		add(f.Summary)
+	}
+	var out []string
+	for _, note := range i.Opportunity {
+		keep := false
+		for _, w := range wordRE.FindAllString(strings.ToLower(note), -1) {
+			if supported[w] {
+				keep = true
+				break
+			}
+		}
+		if keep {
+			out = append(out, note)
+		}
+	}
+	i.Opportunity = out
 }
 
 func fillTopLevelEvidence(i *types.ResearchInsights) {
@@ -164,6 +219,19 @@ func fillTopLevelEvidence(i *types.ResearchInsights) {
 	seen := map[string]bool{}
 	for _, p := range i.PainPoints {
 		for _, e := range p.Evidence {
+			key := e.Title + "|" + e.Permalink
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			i.Evidence = append(i.Evidence, e)
+			if len(i.Evidence) >= 5 {
+				return
+			}
+		}
+	}
+	for _, f := range i.SpecificFriction {
+		for _, e := range f.Evidence {
 			key := e.Title + "|" + e.Permalink
 			if seen[key] {
 				continue
