@@ -201,20 +201,29 @@ type PainPointCluster struct {
 	Evidence   []ResearchEvidence `json:"evidence"`
 }
 
+type SpecificFriction struct {
+	Name       string             `json:"name"`
+	Summary    string             `json:"summary"`
+	Confidence string             `json:"confidence"` // "medium" | "low"
+	Evidence   []ResearchEvidence `json:"evidence"`
+}
+
 // ResearchInsights is the human-oriented output of `tider research`: factual
 // pain-point clusters, repeated asks, opportunity signals, and language found
 // in recent subreddit posts.
 type ResearchInsights struct {
-	Subreddit    string             `json:"subreddit"`
-	PainPoints   []PainPointCluster `json:"pain_points"`
-	RepeatedAsks []string           `json:"repeated_asks"`
-	Opportunity  []string           `json:"opportunity"`
-	Language     []string           `json:"language"`
-	Evidence     []ResearchEvidence `json:"evidence"`
-	Limitations  []string           `json:"limitations,omitempty"`
-	InputTokens  int                `json:"input_tokens,omitempty"`
-	OutputTokens int                `json:"output_tokens,omitempty"`
-	Generated    time.Time          `json:"generated"`
+	Subreddit        string             `json:"subreddit"`
+	Takeaway         string             `json:"takeaway,omitempty"`
+	PainPoints       []PainPointCluster `json:"pain_points"`
+	SpecificFriction []SpecificFriction `json:"specific_friction,omitempty"`
+	RepeatedAsks     []string           `json:"repeated_asks"`
+	Opportunity      []string           `json:"opportunity"`
+	Language         []string           `json:"language"`
+	Evidence         []ResearchEvidence `json:"evidence"`
+	Limitations      []string           `json:"limitations,omitempty"`
+	InputTokens      int                `json:"input_tokens,omitempty"`
+	OutputTokens     int                `json:"output_tokens,omitempty"`
+	Generated        time.Time          `json:"generated"`
 }
 
 // ResearchReport pairs the raw Reddit bundle with the synthesized insight

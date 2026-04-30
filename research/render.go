@@ -13,8 +13,13 @@ func RenderMarkdown(i *types.ResearchInsights) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# r/%s Research\n\n", i.Subreddit)
 
+	if i.Takeaway != "" {
+		sb.WriteString("## Takeaway\n\n")
+		fmt.Fprintf(&sb, "%s\n\n", i.Takeaway)
+	}
+
 	if len(i.PainPoints) > 0 {
-		sb.WriteString("## Pain Point Clusters\n\n")
+		sb.WriteString("## Strongest Pain Points\n\n")
 		for n, p := range i.PainPoints {
 			confidence := p.Confidence
 			if confidence == "" {
@@ -28,6 +33,22 @@ func RenderMarkdown(i *types.ResearchInsights) string {
 		}
 	}
 
+	if len(i.SpecificFriction) > 0 {
+		sb.WriteString("## Specific Friction Seen\n\n")
+		for _, f := range i.SpecificFriction {
+			confidence := f.Confidence
+			if confidence == "" {
+				confidence = "unknown"
+			}
+			fmt.Fprintf(&sb, "- **%s** (%s confidence)", f.Name, confidence)
+			if f.Summary != "" {
+				fmt.Fprintf(&sb, ": %s", f.Summary)
+			}
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n")
+	}
+
 	if len(i.RepeatedAsks) > 0 {
 		sb.WriteString("## Repeated Asks\n\n")
 		for _, ask := range i.RepeatedAsks {
@@ -37,7 +58,7 @@ func RenderMarkdown(i *types.ResearchInsights) string {
 	}
 
 	if len(i.Opportunity) > 0 {
-		sb.WriteString("## Opportunity Signals\n\n")
+		sb.WriteString("## Opportunity Areas\n\n")
 		for _, note := range i.Opportunity {
 			fmt.Fprintf(&sb, "- %s\n", note)
 		}
