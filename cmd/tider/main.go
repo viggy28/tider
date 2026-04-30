@@ -23,7 +23,7 @@ func main() {
 
 	rootCmd.AddCommand(researchCmd)
 	rootCmd.AddCommand(intakeCmd)
-	rootCmd.AddCommand(draftCmd)
+	rootCmd.AddCommand(postCmd)
 	rootCmd.AddCommand(regenCmd)
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(contextCmd)

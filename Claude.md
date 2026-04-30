@@ -112,7 +112,7 @@ TTL per file (tracked in `_meta.json`):
 
 ```
 ~/.tider/last/{sub}.json   # Snapshot: Brief + Research + DraftBundle
-                           # written by `tider draft --sub=X`
+                           # written by `tider post --sub=X`
                            # read + overwritten by `tider regen ... --sub=X`
 ```
 

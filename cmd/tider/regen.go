@@ -34,7 +34,7 @@ var regenCmd = &cobra.Command{
 	Short: "Re-roll one piece of an existing draft (titles or body)",
 	Long: `regen iterates on a saved draft without regenerating the whole bundle.
 
-Run 'tider draft --sub=<sub>' first — it persists a snapshot at
+Run 'tider post --sub=<sub>' first — it persists a snapshot at
 ~/.tider/last/<sub>.json that regen reads from. Each successful regen
 overwrites the snapshot so subsequent regens iterate on the latest state.
 
@@ -158,7 +158,7 @@ func finishRegen(snap *types.Snapshot, bundle *types.DraftBundle) error {
 
 func init() {
 	for _, c := range []*cobra.Command{regenTitlesCmd, regenBodyCmd} {
-		c.Flags().StringVar(&regenSub, "sub", "", "subreddit (the same one you ran `tider draft --sub` with)")
+		c.Flags().StringVar(&regenSub, "sub", "", "subreddit (the same one you ran `tider post --sub` with)")
 		c.Flags().StringVar(&regenNote, "note", "", "guidance for the regeneration (e.g. \"more provocative\")")
 		c.Flags().StringVar(&regenRender, "render", "", "output format: json | markdown (default: markdown in TTY, json when piped)")
 		c.Flags().StringVar(&regenProviders, "providers", "", "comma-separated providers (default from config)")
