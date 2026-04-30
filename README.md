@@ -102,6 +102,24 @@ TTL per file (tracked in `_meta.json`):
 
 `--refresh` flag forces fresh fetch for the current run.
 
+`tider research <sub>` also stores the assembled raw research bundle at:
+
+```
+~/.tider/cache/research/{name}.json
+```
+
+That assembled bundle is reused for a short window so the pain-point
+insight step can be rerun without another Reddit fetch. Use `--refresh`
+to force a new Reddit fetch, or `--raw` to print the raw bundle without
+LLM-generated insights.
+
+By default, `research` prints a concise human report focused on pain-point
+clusters, repeated asks, opportunity signals, community language, confidence,
+and 3-5 evidence posts. Use `--render=json` for raw + insights JSON, or
+`--render=insights-json` for only the structured insight report.
+The insight step uses the configured `research` LLM task, which defaults to
+`gpt-5` with a larger completion budget for reasoning-model headroom.
+
 ---
 
 ## Session layout

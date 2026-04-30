@@ -182,3 +182,46 @@ type Research struct {
 	Flairs    []Flair   `json:"flairs"`
 	Generated time.Time `json:"generated"`
 }
+
+// ResearchEvidence points to a Reddit post used as evidence for an insight.
+// The insight layer intentionally keeps evidence compact so human output stays
+// reviewable while the raw Research bundle remains available for audit.
+type ResearchEvidence struct {
+	Title     string `json:"title"`
+	Score     int    `json:"score"`
+	Comments  int    `json:"comments"`
+	Source    string `json:"source"` // "top_week" | "top_month" | "hot"
+	Permalink string `json:"permalink,omitempty"`
+}
+
+type PainPointCluster struct {
+	Name       string             `json:"name"`
+	Summary    string             `json:"summary"`
+	Confidence string             `json:"confidence"` // "high" | "medium" | "low"
+	Evidence   []ResearchEvidence `json:"evidence"`
+}
+
+// ResearchInsights is the human-oriented output of `tider research`: factual
+// pain-point clusters, repeated asks, opportunity signals, and language found
+// in recent subreddit posts.
+type ResearchInsights struct {
+	Subreddit    string             `json:"subreddit"`
+	PainPoints   []PainPointCluster `json:"pain_points"`
+	RepeatedAsks []string           `json:"repeated_asks"`
+	Opportunity  []string           `json:"opportunity"`
+	Language     []string           `json:"language"`
+	Evidence     []ResearchEvidence `json:"evidence"`
+	Limitations  []string           `json:"limitations,omitempty"`
+	InputTokens  int                `json:"input_tokens,omitempty"`
+	OutputTokens int                `json:"output_tokens,omitempty"`
+	Generated    time.Time          `json:"generated"`
+}
+
+// ResearchReport pairs the raw Reddit bundle with the synthesized insight
+// report. Raw is stored so insights can be audited or regenerated without
+// another Reddit fetch when the assembled cache is fresh.
+type ResearchReport struct {
+	Raw       Research         `json:"raw"`
+	Insights  ResearchInsights `json:"insights"`
+	Generated time.Time        `json:"generated"`
+}
