@@ -26,6 +26,7 @@ func main() {
 	rootCmd.AddCommand(draftCmd)
 	rootCmd.AddCommand(regenCmd)
 	rootCmd.AddCommand(configCmd)
+	rootCmd.AddCommand(contextCmd)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

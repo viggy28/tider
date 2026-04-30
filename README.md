@@ -123,6 +123,36 @@ The insight step uses the configured `research` LLM task, which defaults to
 
 ---
 
+## Context bank
+
+Reusable project and positioning context lives in:
+
+```
+~/.tider/contexts/
+  kova.md
+  streambed.md
+  profile.md
+```
+
+Use it for durable notes you expect to reuse across thread engagement and
+drafting workflows. Context files are plain Markdown so they can hold product
+positioning, current audience, constraints, and "do not say" guidance.
+
+Commands:
+
+```bash
+tider context import kova ./kova.md
+tider context list
+tider context show kova
+tider context edit kova
+```
+
+`tider context show` also accepts direct file paths for ad hoc context review.
+`tider context edit` opens `$EDITOR` on the saved context file, creating it if
+needed.
+
+---
+
 ## Session layout
 
 ```
