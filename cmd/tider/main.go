@@ -16,6 +16,11 @@ post manually. No auth, no posting, no commenting — by design.`,
 }
 
 func main() {
+	// Auto-load .env from cwd and ~/.tider/.env so users don't have to
+	// `source .env` (and don't have to remember `export` or `set -a`).
+	// Real env always wins.
+	autoloadEnv()
+
 	rootCmd.AddCommand(researchCmd)
 	rootCmd.AddCommand(intakeCmd)
 	rootCmd.AddCommand(draftCmd)
