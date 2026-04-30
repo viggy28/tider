@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -19,6 +20,7 @@ var (
 	intakeProvider  string
 	intakeModel     string
 	intakeMaxTokens int
+	intakeRender    string
 )
 
 var intakeCmd = &cobra.Command{
@@ -70,11 +72,23 @@ API key for the chosen provider must be set in the environment
 		if err != nil {
 			return err
 		}
-		out, err := json.MarshalIndent(brief, "", "  ")
-		if err != nil {
-			return err
+
+		switch resolveRender(intakeRender) {
+		case "markdown":
+			md := intake.RenderMarkdown(brief)
+			if isTerminal(os.Stdout) {
+				md = renderTerminal(md)
+			}
+			fmt.Print(md)
+		case "json":
+			out, err := json.MarshalIndent(brief, "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(out))
+		default:
+			return fmt.Errorf("unknown --render value: %s (use json or markdown)", intakeRender)
 		}
-		fmt.Println(string(out))
 		return nil
 	},
 }
@@ -85,4 +99,5 @@ func init() {
 	intakeCmd.Flags().StringVar(&intakeProvider, "provider", "", "LLM provider: anthropic | openai (default from config)")
 	intakeCmd.Flags().StringVar(&intakeModel, "model", "", "LLM model name (default from config)")
 	intakeCmd.Flags().IntVar(&intakeMaxTokens, "max-tokens", 0, "LLM completion budget (default from config)")
+	intakeCmd.Flags().StringVar(&intakeRender, "render", "", "output format: json | markdown (default: markdown in TTY, json when piped)")
 }
