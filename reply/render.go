@@ -32,7 +32,7 @@ func RenderMarkdown(b *types.ReplyBundle, threadTitle string, sessionPath string
 
 	pick := findDraft(b.Drafts, b.PickID)
 	if pick != nil {
-		fmt.Fprintf(&sb, "## Best Pick — %s\n\n", titleCaseLabel(pick.Label))
+		sb.WriteString("## Best Pick\n\n")
 		if pick.Reasoning != "" {
 			fmt.Fprintf(&sb, "> %s\n\n", pick.Reasoning)
 		}

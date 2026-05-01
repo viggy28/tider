@@ -41,7 +41,7 @@ func TestRenderMarkdownBestPickLeads(t *testing.T) {
 		"Thread: best plugins for performance?",
 		"Mode: reply",
 		"Session: /tmp/sessions/replies/x",
-		"## Best Pick — Best",                 // label is title-cased
+		"## Best Pick",                         // header per spec
 		"> concise + fits sub",                 // pick reasoning as blockquote
 		"Best reply text here.",                // pick text in full
 		"## Alternatives",

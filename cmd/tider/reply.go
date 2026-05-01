@@ -158,12 +158,19 @@ API key for the chosen provider must be set in the environment
 		if err != nil {
 			return fmt.Errorf("drafter provider: %w", err)
 		}
-		bundle, err := reply.GenerateReply(ctx, draftP, draftModel, &reply.DraftInput{
+		input := &reply.DraftInput{
 			Thread:        thread,
 			Mode:          modeResult,
 			Contexts:      contexts,
 			AuthorContext: cfg.AuthorContext,
-		}, draftMaxTokens)
+		}
+		// Snapshot the assembled drafter input so the user can inspect
+		// exactly what the LLM saw — useful for debugging "why did the
+		// drafts come out this way?" without re-running.
+		if err := sess.WriteJSON("draft-input.json", input); err != nil {
+			return err
+		}
+		bundle, err := reply.GenerateReply(ctx, draftP, draftModel, input, draftMaxTokens)
 		if err != nil {
 			return err
 		}
