@@ -3,11 +3,14 @@ package llm
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -43,18 +46,55 @@ type openaiRequest struct {
 	ResponseFormat *openaiResponseFormat `json:"response_format,omitempty"`
 }
 
+// openaiMessage covers both shapes the API accepts: Content is a string
+// for plain text messages and a slice of content blocks for vision
+// requests. Marshaling picks whichever is non-nil.
 type openaiMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role         string
+	Text         string
+	ContentParts []openaiContentPart
+}
+
+type openaiContentPart struct {
+	Type     string             `json:"type"`
+	Text     string             `json:"text,omitempty"`
+	ImageURL *openaiImageURLRef `json:"image_url,omitempty"`
+}
+
+type openaiImageURLRef struct {
+	URL string `json:"url"`
+}
+
+func (m openaiMessage) MarshalJSON() ([]byte, error) {
+	type withText struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}
+	type withParts struct {
+		Role    string              `json:"role"`
+		Content []openaiContentPart `json:"content"`
+	}
+	if len(m.ContentParts) > 0 {
+		return json.Marshal(withParts{Role: m.Role, Content: m.ContentParts})
+	}
+	return json.Marshal(withText{Role: m.Role, Content: m.Text})
 }
 
 type openaiResponseFormat struct {
 	Type string `json:"type"`
 }
 
+// openaiResponseMessage is the response-side shape: completions always
+// return plain string content, regardless of whether the request used
+// multipart vision content blocks.
+type openaiResponseMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
 type openaiResponse struct {
 	Choices []struct {
-		Message openaiMessage `json:"message"`
+		Message openaiResponseMessage `json:"message"`
 	} `json:"choices"`
 	Usage struct {
 		PromptTokens     int `json:"prompt_tokens"`
@@ -90,10 +130,36 @@ func (o *OpenAI) Complete(ctx context.Context, req Request) (*Response, error) {
 	if req.JSONMode {
 		body.ResponseFormat = &openaiResponseFormat{Type: "json_object"}
 	}
-	for _, m := range req.Messages {
+	// Translate llm.Messages to openaiMessages. Images attach to the LAST
+	// user-role message — same convention OpenAI's reference docs use for
+	// vision requests.
+	lastUserIdx := -1
+	for i, m := range req.Messages {
+		if m.Role == RoleUser {
+			lastUserIdx = i
+		}
+	}
+	if len(req.Images) > 0 && lastUserIdx == -1 {
+		return nil, fmt.Errorf("openai: Images set but no user-role message to attach them to")
+	}
+	for i, m := range req.Messages {
 		switch m.Role {
-		case RoleSystem, RoleUser, RoleAssistant:
-			body.Messages = append(body.Messages, openaiMessage{Role: m.Role, Content: m.Content})
+		case RoleSystem, RoleAssistant:
+			body.Messages = append(body.Messages, openaiMessage{Role: m.Role, Text: m.Content})
+		case RoleUser:
+			if i == lastUserIdx && len(req.Images) > 0 {
+				parts := []openaiContentPart{{Type: "text", Text: m.Content}}
+				for _, img := range req.Images {
+					ref, err := openaiImageRef(img)
+					if err != nil {
+						return nil, fmt.Errorf("openai: image %d: %w", len(parts)-1, err)
+					}
+					parts = append(parts, openaiContentPart{Type: "image_url", ImageURL: ref})
+				}
+				body.Messages = append(body.Messages, openaiMessage{Role: m.Role, ContentParts: parts})
+			} else {
+				body.Messages = append(body.Messages, openaiMessage{Role: m.Role, Text: m.Content})
+			}
 		default:
 			return nil, fmt.Errorf("openai: unknown role %q", m.Role)
 		}
@@ -137,4 +203,46 @@ func (o *OpenAI) Complete(ctx context.Context, req Request) (*Response, error) {
 		InputTokens:  resp.Usage.PromptTokens,
 		OutputTokens: resp.Usage.CompletionTokens,
 	}, nil
+}
+
+// openaiImageRef turns an llm.ImageInput into the OpenAI `image_url`
+// payload. Local Path is preferred — the file is read and embedded as a
+// data URL so the wire request is self-contained even when the original
+// (signed) URL has expired. URL is the fallback for callers that only
+// have a remote reference.
+func openaiImageRef(img ImageInput) (*openaiImageURLRef, error) {
+	if img.Path != "" {
+		data, err := os.ReadFile(img.Path)
+		if err != nil {
+			return nil, fmt.Errorf("read image %s: %w", img.Path, err)
+		}
+		mime := img.MIME
+		if mime == "" {
+			mime = guessImageMIME(img.Path)
+		}
+		dataURL := "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)
+		return &openaiImageURLRef{URL: dataURL}, nil
+	}
+	if img.URL != "" {
+		return &openaiImageURLRef{URL: img.URL}, nil
+	}
+	return nil, fmt.Errorf("image has neither Path nor URL")
+}
+
+// guessImageMIME returns the image/* type based on a file extension.
+// Defaults to image/png when unrecognized — that's the safe default for
+// Firecrawl screenshots, which are PNG.
+func guessImageMIME(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".webp":
+		return "image/webp"
+	case ".gif":
+		return "image/gif"
+	default:
+		return "image/png"
+	}
 }

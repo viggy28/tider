@@ -86,6 +86,13 @@ func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error
 	if req.MaxTokens <= 0 {
 		return nil, fmt.Errorf("anthropic: MaxTokens must be > 0")
 	}
+	if len(req.Images) > 0 {
+		// Anthropic vision support is deferred to v1.5 per
+		// SPEC_REVIEW_VISUAL_FIRECRAWL.md. Fail loudly so callers route
+		// vision-required tasks (review_visual) to OpenAI instead of
+		// silently dropping the screenshot.
+		return nil, fmt.Errorf("anthropic: image inputs not supported in this provider build (model %s); route vision tasks to openai", model)
+	}
 
 	body := anthropicRequest{
 		Model:       model,
