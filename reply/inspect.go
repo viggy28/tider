@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -28,17 +29,33 @@ const (
 // a contact path.
 const inspectUserAgent = "tider/0.1 (review-mode inspection; contact /u/tider28)"
 
-// Inspect fetches the target URL and extracts structured signals (title,
-// meta description, og tags, headings, visible-text snippets) for the
-// review drafter to ground its observations in. Bounded byte/element
-// caps keep the inspection JSON LLM-friendly.
+// Inspect dispatches to a backend based on environment:
+//
+//   - If FIRECRAWL_API_KEY is set → InspectFirecrawl. Returns markdown,
+//     full-page screenshot URL, and embedded image URLs alongside the
+//     usual structural fields. Inspection.Source = "firecrawl".
+//   - Otherwise → InspectHTML. stdlib + x/net/html, text-only signal.
+//     Inspection.Source = "html".
+//
+// Both return *types.Inspection with the same shape; downstream steps
+// (review notes, drafter) read whatever's present.
+func Inspect(ctx context.Context, client *http.Client, target string) (*types.Inspection, error) {
+	if key := strings.TrimSpace(os.Getenv("FIRECRAWL_API_KEY")); key != "" {
+		return InspectFirecrawl(ctx, client, key, target)
+	}
+	return InspectHTML(ctx, client, target)
+}
+
+// InspectHTML is the stdlib-only backend: fetch HTML, parse via
+// golang.org/x/net/html, extract title/meta/og/headings/snippets. Always
+// available — no API key required, but sees only text content.
 //
 // Errors:
 //   - non-2xx → fail with status code preserved on the returned error
-//   - HTML parse error on real HTML is rare (x/net/html is forgiving);
+//   - HTML parse errors on real HTML are rare (x/net/html is forgiving);
 //     malformed input still produces a partial Inspection where possible
 //   - network errors are propagated
-func Inspect(ctx context.Context, client *http.Client, target string) (*types.Inspection, error) {
+func InspectHTML(ctx context.Context, client *http.Client, target string) (*types.Inspection, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
@@ -70,6 +87,7 @@ func Inspect(ctx context.Context, client *http.Client, target string) (*types.In
 	}
 	insp.URL = target
 	insp.Status = resp.StatusCode
+	insp.Source = "html"
 	insp.FetchedAt = time.Now().UTC()
 	return insp, nil
 }

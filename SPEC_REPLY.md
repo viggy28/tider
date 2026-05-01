@@ -476,3 +476,22 @@ A pre-audit version had `## Best Pick — Best` (with the picked variant's label
 ### 2026-04-30: `draft-input.json` shape varies by mode
 
 Reply mode writes `reply.DraftInput`. Review mode writes `reply.ReviewDraftInput` (which adds `Notes`). Both serialize fine as JSON; the file is a debug artifact rather than a stable contract, so the variance is acceptable. The `mode` field in `mode.json` tells callers which shape to expect.
+
+### 2026-04-30: Firecrawl-backed inspection (Patch 3, partial)
+
+Original spec deferred all of Patch 3 (image/screenshot inspection) to a follow-up branch, citing the headless-browser dep cost. After review, we picked a service-based path instead — Firecrawl (firecrawl.dev) provides markdown extraction + full-page screenshot + image URL list via a single REST call, no Chrome dep needed. Single-binary tider preserved.
+
+Backend dispatch in `reply.Inspect`:
+- `FIRECRAWL_API_KEY` in env → `InspectFirecrawl` (POST `/v1/scrape`, formats: markdown + screenshot@fullPage + links). Inspection.Source = "firecrawl"; populates `Markdown`, `ScreenshotURL`, `ImageURLs` alongside the structural fields.
+- otherwise → `InspectHTML` (the existing stdlib + x/net/html backend, text-only). Inspection.Source = "html".
+
+CLI behavior in review mode: after `Inspect` returns, if `ScreenshotURL` is non-empty, the screenshot is downloaded to `<session>/screenshots/screenshot-<timestamp>.png` so it persists after Firecrawl's hosted URL expires. Download failure is non-fatal — the URL is still in `inspection.json`.
+
+What's NOT shipped yet (deliberate scope split):
+- Vision-LLM consumption of the screenshot/images. The current notes-builder LLM call is text-only — it sees `Markdown` + `Headings` + `Snippets` (Firecrawl's output is materially cleaner than HTML extraction so review notes already improve), but it doesn't actually look at the screenshot. Adding vision requires extending `internal/llm/Message` to support image attachments, which touches both Anthropic and OpenAI provider implementations. That's a separate commit.
+
+So today's contribution is half of the visual story: rich text extraction + persisted visual artifacts. The visual-LLM analysis on top is a follow-up. Even without it, Firecrawl's markdown is strictly better than HTML scraping for downstream prompts, so this still earns its keep when the API key is present.
+
+### 2026-04-30: Inspection types extended
+
+Added to `types.Inspection`: `Source` ("html"|"firecrawl"), `Markdown`, `ScreenshotURL`, `ScreenshotPath`, `ImageURLs`. All optional/zero-friendly — text-only `InspectHTML` doesn't populate them, so `inspection.json` from an HTML run looks unchanged from before.

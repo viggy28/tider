@@ -176,11 +176,30 @@ API key for the chosen provider must be set in the environment
 			// (target.json is written; nothing else past this point) — the
 			// spec's "do not generate generic review advice as a fallback"
 			// rule is honored by simply propagating the error.
-			httpClient := &http.Client{Timeout: 30 * time.Second}
+			//
+			// Backend dispatch (text-only HTML vs Firecrawl with screenshot
+			// + images) lives inside reply.Inspect, keyed off
+			// FIRECRAWL_API_KEY in env.
+			httpClient := &http.Client{Timeout: 60 * time.Second}
 			inspection, err := reply.Inspect(ctx, httpClient, modeResult.TargetURLs[0])
 			if err != nil {
 				return fmt.Errorf("inspection: %w (session preserved at %s)", err, sess.Path())
 			}
+
+			// If Firecrawl returned a screenshot URL, download it into
+			// the session's screenshots/ dir so it persists after
+			// Firecrawl's hosted URL eventually expires. Failure here is
+			// non-fatal — the URL is still in inspection.json.
+			if inspection.ScreenshotURL != "" {
+				screenshotDir := filepath.Join(sess.Path(), "screenshots")
+				localPath, derr := reply.DownloadScreenshot(ctx, httpClient, inspection.ScreenshotURL, screenshotDir)
+				if derr != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to download screenshot: %v\n", derr)
+				} else {
+					inspection.ScreenshotPath = localPath
+				}
+			}
+
 			if err := sess.WriteJSON("inspection.json", inspection); err != nil {
 				return err
 			}

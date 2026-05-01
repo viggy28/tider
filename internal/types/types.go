@@ -314,19 +314,37 @@ type ReplyBundle struct {
 }
 
 // Inspection is the structured signal we extract from a review target's
-// HTML page — used as input to the review-notes step. Kept narrow on
-// purpose: the LLM downstream is good at generalizing from a small set
-// of grounded snippets but bad at digesting raw HTML.
+// page. Two extraction backends populate this struct, identified by
+// Source:
+//
+//   - "html"      — stdlib net/http + golang.org/x/net/html. Always
+//                   available. Title/meta/headings/snippets only.
+//   - "firecrawl" — firecrawl.dev API. Used when FIRECRAWL_API_KEY is in
+//                   the env. Adds Markdown (cleaner than Snippets),
+//                   ScreenshotURL (full-page PNG), and ImageURLs.
+//
+// Downstream steps (review notes, drafter) read whatever's present and
+// gracefully degrade. The ScreenshotURL/ImageURLs unlock visual review
+// observations once a vision-capable LLM call is wired in (separate
+// follow-up — current notes step is text-only).
 type Inspection struct {
 	URL             string    `json:"url"`
 	Status          int       `json:"status"`
+	Source          string    `json:"source"` // "html" | "firecrawl"
 	Title           string    `json:"title,omitempty"`
 	MetaDescription string    `json:"meta_description,omitempty"`
 	OGTitle         string    `json:"og_title,omitempty"`
 	OGDescription   string    `json:"og_description,omitempty"`
 	Headings        []Heading `json:"headings,omitempty"`
 	Snippets        []string  `json:"snippets,omitempty"`
-	FetchedAt       time.Time `json:"fetched_at"`
+
+	// Populated only by the firecrawl backend.
+	Markdown       string   `json:"markdown,omitempty"`
+	ScreenshotURL  string   `json:"screenshot_url,omitempty"`
+	ScreenshotPath string   `json:"screenshot_path,omitempty"` // local path under session/screenshots if downloaded
+	ImageURLs      []string `json:"image_urls,omitempty"`
+
+	FetchedAt time.Time `json:"fetched_at"`
 }
 
 // Heading is one h1/h2/h3 from the inspected page.
