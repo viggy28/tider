@@ -234,3 +234,31 @@ type ResearchReport struct {
 	Insights  ResearchInsights `json:"insights"`
 	Generated time.Time        `json:"generated"`
 }
+
+// Thread is a fetched Reddit submission plus a slice of selected comments.
+// Used by `tider reply` for both mode detection (uses post fields only)
+// and reply drafting (uses post + comments).
+type Thread struct {
+	URL         string    `json:"url"`
+	Subreddit   string    `json:"subreddit"`
+	PostID      string    `json:"post_id"`
+	Title       string    `json:"title"`
+	Body        string    `json:"body"`
+	Author      string    `json:"author"`
+	Flair       string    `json:"flair,omitempty"`
+	OutboundURL string    `json:"outbound_url,omitempty"`
+	Comments    []Comment `json:"comments"`
+	FetchedAt   time.Time `json:"fetched_at"`
+}
+
+// Comment is a single Reddit comment, flattened from its position in the
+// reply tree. ParentID is preserved so callers can reconstruct hierarchy
+// if needed (LLM prompt rendering, for example).
+type Comment struct {
+	ID         string  `json:"id"`
+	ParentID   string  `json:"parent_id,omitempty"`
+	Author     string  `json:"author"`
+	Body       string  `json:"body"`
+	Score      int     `json:"score"`
+	CreatedUTC float64 `json:"created_utc"`
+}
