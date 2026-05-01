@@ -28,6 +28,22 @@ func RenderMarkdown(b *types.ReplyBundle, threadTitle string, sessionPath string
 	if sessionPath != "" {
 		fmt.Fprintf(&sb, "Session: %s\n", sessionPath)
 	}
+	// Inspection-depth header — populated only in review mode so the
+	// reader can see what was inspected before reading the draft. Per
+	// SPEC_REVIEW_VISUAL_FIRECRAWL.md "Output rendering".
+	if b.Inspection != nil {
+		fmt.Fprintf(&sb, "Inspection: %s\n", inspectionDescription(b.Inspection))
+		if b.Inspection.ScreenshotPath != "" {
+			sb.WriteString("Screenshot: saved\n")
+		}
+		fmt.Fprintf(&sb, "Images analyzed: %d\n", b.Inspection.ImagesAnalyzed)
+		if b.Inspection.ShopType != "" {
+			fmt.Fprintf(&sb, "Shop type: %s\n", b.Inspection.ShopType)
+		}
+		if len(b.Inspection.Limitations) > 0 {
+			fmt.Fprintf(&sb, "Limitations: %s\n", strings.Join(b.Inspection.Limitations, "; "))
+		}
+	}
 	sb.WriteString("\n")
 
 	pick := findDraft(b.Drafts, b.PickID)
@@ -54,6 +70,26 @@ func RenderMarkdown(b *types.ReplyBundle, threadTitle string, sessionPath string
 	return sb.String()
 }
 
+// inspectionDescription turns an InspectionSummary into a one-line
+// description for the rendered header. "Firecrawl visual" when the
+// firecrawl backend ran with a screenshot; "Firecrawl (no screenshot)"
+// is a defensive case but should not occur in practice — the review-
+// mode invariant requires a screenshot. Fallback to Source verbatim
+// for unknown values so future backends don't render as empty.
+func inspectionDescription(s *types.InspectionSummary) string {
+	switch s.Source {
+	case "firecrawl":
+		if s.ScreenshotPath != "" {
+			return "Firecrawl visual"
+		}
+		return "Firecrawl (no screenshot)"
+	case "":
+		return "unknown"
+	default:
+		return s.Source
+	}
+}
+
 func findDraft(drafts []types.ReplyDraft, id string) *types.ReplyDraft {
 	for i := range drafts {
 		if drafts[i].ID == id {
@@ -74,17 +110,19 @@ func alternatives(drafts []types.ReplyDraft, pickID string) []types.ReplyDraft {
 }
 
 // displayLabel maps known variant ids to their spec-mandated display
-// form (SPEC_REPLY_REFINEMENT.md, "Output rendering"). Hyphen retention
-// is intentional and per-label: "thread-aware" reads as a compound
-// modifier and keeps its hyphen; "personal-story" and "question-first"
-// read as noun phrases and use spaces.
+// form. SPEC_REPLY_REFINEMENT.md "Output rendering" defines the reply-
+// mode forms; SPEC_REVIEW_VISUAL_FIRECRAWL.md adds review-mode-specific
+// variants. Hyphen retention is per-label and intentional: compound
+// modifiers like "thread-aware" / "structured-review" keep the hyphen;
+// noun phrases like "personal-story" / "question-first" use spaces.
 var displayLabel = map[string]string{
-	"best":           "Best",
-	"short":          "Short",
-	"thread-aware":   "Thread-Aware",
-	"personal-story": "Personal Story",
-	"question-first": "Question First",
-	"detailed":       "Detailed",
+	"best":              "Best",
+	"short":             "Short",
+	"thread-aware":      "Thread-Aware",
+	"personal-story":    "Personal Story",
+	"question-first":    "Question First",
+	"detailed":          "Detailed",
+	"structured-review": "Structured-Review",
 }
 
 // titleCaseLabel returns the display form of a draft label. Known labels

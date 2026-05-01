@@ -288,6 +288,31 @@ func TestAnthropicUnknownRoleRejected(t *testing.T) {
 	}
 }
 
+// Vision support is intentionally not implemented for Anthropic in v1
+// (per SPEC_REVIEW_VISUAL_FIRECRAWL.md). The provider must error
+// loudly when Images is non-empty so vision-required tasks like
+// review_visual get routed to OpenAI instead of silently dropping the
+// screenshot.
+func TestAnthropicErrorsOnImageInputs(t *testing.T) {
+	a := newAnthropicTest(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("Anthropic should NOT make an HTTP request when Images is non-empty")
+	}))
+	_, err := a.Complete(context.Background(), Request{
+		MaxTokens: 100,
+		Messages:  []Message{{Role: RoleUser, Content: "describe this"}},
+		Images:    []ImageInput{{URL: "https://example.com/x.png"}},
+	})
+	if err == nil {
+		t.Fatal("expected error when Images is non-empty for Anthropic")
+	}
+	if !strings.Contains(err.Error(), "image inputs not supported") {
+		t.Errorf("expected unsupported-images error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "openai") {
+		t.Errorf("error should hint to route vision tasks to openai, got: %v", err)
+	}
+}
+
 func TestAnthropicName(t *testing.T) {
 	a := &Anthropic{}
 	if a.Name() != "anthropic" {

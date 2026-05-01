@@ -183,12 +183,69 @@ func TestRenderReviewPromptCitesNotesAndOmitsEmpty(t *testing.T) {
 		"Five years at Cloudflare",
 		"# Context (project material",
 		"kova body",
-		"Do not name or pitch the project",
+		"name or pitch the project", // bold markup may surround "not"; assert the substring that survives either form
 	}
 	for _, s := range checks {
 		if !strings.Contains(prompt, s) {
 			t.Errorf("review prompt missing %q\n--- prompt ---\n%s", s, prompt)
 		}
+	}
+}
+
+// VisualNotes propagation: when ReviewDraftInput.VisualNotes is set,
+// the review prompt MUST include the visual section so the drafter can
+// cite specific visual observations. When VisualNotes is nil, the
+// section MUST be omitted (no "Visual review notes" header) so the
+// drafter doesn't hallucinate visual feedback for a thread that didn't
+// have it.
+func TestRenderReviewPromptIncludesVisualNotes(t *testing.T) {
+	in := sampleReviewInput()
+	in.VisualNotes = &types.VisualReviewNotes{
+		ShopType: "handmade",
+		Summary:  "warm one-person handmade studio with weak product proof",
+		Observations: []types.VisualObservation{
+			{
+				Area:           "product_images",
+				Finding:        "no in-hand or scale shot in the first 3 images",
+				Evidence:       "all top-down crops",
+				Severity:       "high",
+				Recommendation: "add a hand-held photo to slot 1 or 2",
+			},
+		},
+		KovaSignals: []string{"texture invisible at the photo crops shown"},
+	}
+
+	prompt, err := RenderReviewPrompt(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checks := []string{
+		"# Visual review notes",
+		"ShopType: handmade",
+		"warm one-person handmade studio",
+		"product_images",
+		"no in-hand or scale shot",
+		"## Kova signals",
+		"texture invisible at the photo crops",
+		"do not recommend \"show your maker process\"", // gating rule appears in the prompt
+	}
+	for _, s := range checks {
+		if !strings.Contains(prompt, s) {
+			t.Errorf("review prompt missing %q\n--- prompt ---\n%s", s, prompt)
+		}
+	}
+}
+
+func TestRenderReviewPromptOmitsVisualSectionWhenNil(t *testing.T) {
+	in := sampleReviewInput()
+	in.VisualNotes = nil
+
+	prompt, err := RenderReviewPrompt(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(prompt, "# Visual review notes") {
+		t.Error("Visual review notes section should be omitted when VisualNotes is nil")
 	}
 }
 

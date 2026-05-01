@@ -46,11 +46,39 @@ const inspectUserAgent = "tider/0.1 (review-mode inspection; contact /u/tider28)
 //
 // Both backends return *types.Inspection with the same shape;
 // downstream steps (review notes, drafter) read whatever's present.
+//
+// Inspect is the LEGACY entry point. New review-mode callers should use
+// InspectReviewTarget instead — it requires Firecrawl + a screenshot
+// per SPEC_REVIEW_VISUAL_FIRECRAWL.md and refuses the HTML fallback
+// path entirely.
 func Inspect(ctx context.Context, client *http.Client, target string) (*types.Inspection, error) {
 	if key := strings.TrimSpace(os.Getenv("FIRECRAWL_API_KEY")); key != "" {
 		return InspectFirecrawl(ctx, client, key, target)
 	}
 	return InspectHTML(ctx, client, target)
+}
+
+// InspectReviewTarget is the entry point for review mode. It requires
+// FIRECRAWL_API_KEY and a non-empty ScreenshotURL on the response —
+// review mode is a visual review per SPEC_REVIEW_VISUAL_FIRECRAWL.md
+// and silently downgrading to HTML or to a no-screenshot path would
+// produce reviews that *look* visual but aren't.
+//
+// Errors are explicit so the user can route around them with
+// `--mode=reply` (the recoverable escape hatch) or by setting the key.
+func InspectReviewTarget(ctx context.Context, client *http.Client, target string) (*types.Inspection, error) {
+	key := strings.TrimSpace(os.Getenv("FIRECRAWL_API_KEY"))
+	if key == "" {
+		return nil, fmt.Errorf("review mode requires visual site inspection, but FIRECRAWL_API_KEY is not set; either set the key or rerun with --mode=reply")
+	}
+	insp, err := InspectFirecrawl(ctx, client, key, target)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(insp.ScreenshotURL) == "" {
+		return nil, fmt.Errorf("review mode requires a screenshot, but Firecrawl returned none for %s", target)
+	}
+	return insp, nil
 }
 
 // InspectHTML is the stdlib-only backend: fetch HTML, parse via
