@@ -295,10 +295,16 @@ type LoadedReplyContext struct {
 
 // ReplyDraft is one variant produced by the reply drafter.
 //
-// Common labels: "best", "short", "thread-aware", "personal-story",
-// "question-first", "detailed". Not exhaustive — labels are free-form
-// strings on the wire so the prompt can evolve without a schema change.
-// The renderer title-cases hyphenated labels for display.
+// Common labels: "best", "shorter", "counterpoint", "warmer-personal",
+// "question". Review mode adds "structured-review". Older sessions may
+// contain legacy labels ("short", "thread-aware", "personal-story",
+// "question-first", "detailed") which the renderer still maps to
+// readable display forms.
+//
+// Labels are free-form strings on the wire so the prompt can evolve
+// without a schema change. Reasoning is preserved for audit/debug but
+// is NOT included in the rendered markdown — see SPEC_REPLY_REFINEMENT.md
+// "Output rendering".
 type ReplyDraft struct {
 	ID        string `json:"id"`
 	Label     string `json:"label"`

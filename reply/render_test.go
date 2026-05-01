@@ -15,10 +15,10 @@ func sampleBundle() *types.ReplyBundle {
 		Mode:      types.ReplyModeReply,
 		Drafts: []types.ReplyDraft{
 			{ID: "best", Label: "best", Text: "Best reply text here.", Reasoning: "concise + fits sub"},
-			{ID: "short", Label: "short", Text: "Short text.", Reasoning: "shortest viable"},
-			{ID: "thread-aware", Label: "thread-aware", Text: "Engages the batching pushback.", Reasoning: "top comment counterpoint"},
-			{ID: "personal-story", Label: "personal-story", Text: "Story-shaped reply.", Reasoning: "uses one-person handmade shop story from personal.md"},
-			{ID: "question-first", Label: "question-first", Text: "What's your stack?", Reasoning: "need more info"},
+			{ID: "shorter", Label: "shorter", Text: "Shorter text.", Reasoning: "shortest viable"},
+			{ID: "counterpoint", Label: "counterpoint", Text: "Engages the batching pushback.", Reasoning: "top comment counterpoint"},
+			{ID: "warmer-personal", Label: "warmer-personal", Text: "Story-shaped reply.", Reasoning: "uses one-person handmade shop story from personal.md"},
+			{ID: "question", Label: "question", Text: "What's your stack?", Reasoning: "need more info"},
 		},
 		PickID:    "best",
 		Generated: time.Now(),
@@ -29,12 +29,12 @@ func TestRenderMarkdownBestPickLeads(t *testing.T) {
 	md := RenderMarkdown(sampleBundle(), "best plugins for performance?", "/tmp/sessions/replies/x")
 
 	pickIdx := strings.Index(md, "## Best Pick")
-	altIdx := strings.Index(md, "## Alternatives")
+	altIdx := strings.Index(md, "## Alternative Picks")
 	if pickIdx == -1 || altIdx == -1 {
 		t.Fatalf("missing section headers\n--- output ---\n%s", md)
 	}
 	if pickIdx > altIdx {
-		t.Errorf("Best Pick should come before Alternatives")
+		t.Errorf("Best Pick should come before Alternative Picks")
 	}
 
 	checks := []string{
@@ -42,22 +42,60 @@ func TestRenderMarkdownBestPickLeads(t *testing.T) {
 		"Thread: best plugins for performance?",
 		"Mode: reply",
 		"Session: /tmp/sessions/replies/x",
-		"## Best Pick",                         // header per spec
-		"> concise + fits sub",                 // pick reasoning as blockquote
-		"Best reply text here.",                // pick text in full
-		"## Alternatives",
-		"### Short",
-		"*shortest viable*",                    // alt reasoning as italic
-		"Short text.",
-		"### Thread-Aware",                     // compound modifier — hyphen retained per spec
-		"### Personal Story",                   // noun phrase — space, not hyphen, per spec
-		"### Question First",                   // noun phrase — space, not hyphen, per spec
+		"## Best Pick",                             // header per spec
+		"Best reply text here.",                    // pick text in full
+		"## Alternative Picks",                     // renamed from "Alternatives" per v2 spec
+		"### Shorter",                              // v2 label, replaces "Short"
+		"Shorter text.",
+		"### Counterpoint",                         // v2 label, replaces "Thread-Aware"
+		"### Warmer / Personal",                    // v2 label with explicit spacing per spec
+		"### Question",                             // v2 label, replaces "Question First"
 		"What's your stack?",
 	}
 	for _, c := range checks {
 		if !strings.Contains(md, c) {
 			t.Errorf("missing %q\n--- output ---\n%s", c, md)
 		}
+	}
+}
+
+// Per SPEC_REPLY_REFINEMENT.md (v2) "Output rendering", the rendered
+// markdown does NOT include per-variant reasoning. Reasoning stays in
+// drafts.json for audit/debug only — surfacing it here would turn the
+// output into a report about the comments rather than the comments
+// themselves.
+func TestRenderMarkdownDoesNotIncludeReasoning(t *testing.T) {
+	md := RenderMarkdown(sampleBundle(), "title", "/x")
+	bannedReasoningStrings := []string{
+		"> concise + fits sub",      // old blockquote on best pick
+		"*shortest viable*",         // old italic on alternative
+		"*top comment counterpoint*",
+		"*need more info*",
+		"concise + fits sub",        // even un-decorated reasoning shouldn't appear
+		"shortest viable",
+		"top comment counterpoint",
+		"uses one-person handmade shop story from personal.md",
+		"need more info",
+		// Forbidden user-facing labels from older drafts:
+		"Why this works",
+		"Editing Notes",
+	}
+	for _, banned := range bannedReasoningStrings {
+		if strings.Contains(md, banned) {
+			t.Errorf("rendered markdown should not contain reasoning text %q\n--- output ---\n%s", banned, md)
+		}
+	}
+}
+
+// Old "## Alternatives" section header was renamed to "## Alternative Picks"
+// in v2. This test catches the regression of the old name slipping back in.
+func TestRenderMarkdownUsesAlternativePicks(t *testing.T) {
+	md := RenderMarkdown(sampleBundle(), "title", "/x")
+	if strings.Contains(md, "## Alternatives\n") {
+		t.Errorf("rendered markdown should not contain old '## Alternatives' header\n--- output ---\n%s", md)
+	}
+	if !strings.Contains(md, "## Alternative Picks") {
+		t.Errorf("rendered markdown must contain '## Alternative Picks' header per v2 spec\n--- output ---\n%s", md)
 	}
 }
 
@@ -80,17 +118,17 @@ func TestRenderMarkdownWithoutThreadTitle(t *testing.T) {
 
 func TestRenderMarkdownPickIDNotInDrafts(t *testing.T) {
 	// Defensive: if PickID points at a missing draft, no Best Pick section
-	// renders, but Alternatives still lists everything.
+	// renders, but Alternative Picks still lists everything.
 	b := sampleBundle()
 	b.PickID = "nope"
 	md := RenderMarkdown(b, "title", "")
 	if strings.Contains(md, "## Best Pick") {
 		t.Error("missing pick should suppress Best Pick header")
 	}
-	if !strings.Contains(md, "## Alternatives") {
-		t.Error("Alternatives should still render")
+	if !strings.Contains(md, "## Alternative Picks") {
+		t.Error("Alternative Picks should still render")
 	}
-	for _, want := range []string{"### Best", "### Short", "### Thread-Aware", "### Personal Story", "### Question First"} {
+	for _, want := range []string{"### Best", "### Shorter", "### Counterpoint", "### Warmer / Personal", "### Question"} {
 		if !strings.Contains(md, want) {
 			t.Errorf("alternative %q should still render", want)
 		}
@@ -149,14 +187,20 @@ func TestRenderMarkdownReplyModeOmitsInspectionHeader(t *testing.T) {
 
 func TestTitleCaseLabel(t *testing.T) {
 	cases := []struct{ in, want string }{
-		// Spec-mandated display forms (SPEC_REPLY_REFINEMENT.md "Output rendering").
+		// v2 reply-mode labels (SPEC_REPLY_REFINEMENT.md "Output rendering").
 		{"best", "Best"},
+		{"shorter", "Shorter"},
+		{"counterpoint", "Counterpoint"},
+		{"warmer-personal", "Warmer / Personal"}, // explicit spacing per spec
+		{"question", "Question"},
+		// Review-mode-specific.
+		{"structured-review", "Structured-Review"},
+		// Legacy ids preserved in the map for old session re-renders.
 		{"short", "Short"},
-		{"thread-aware", "Thread-Aware"},          // hyphen retained — compound modifier
-		{"personal-story", "Personal Story"},      // space — noun phrase
-		{"question-first", "Question First"},      // space — noun phrase
+		{"thread-aware", "Thread-Aware"},
+		{"personal-story", "Personal Story"},
+		{"question-first", "Question First"},
 		{"detailed", "Detailed"},
-		{"structured-review", "Structured-Review"}, // hyphen retained — compound modifier (review-mode variant)
 		// Unknown labels fall back to kebab→title-case-with-hyphens so future
 		// variant names render reasonably without a code change.
 		{"long-multi-part", "Long-Multi-Part"},

@@ -107,12 +107,14 @@ Use context as a **lens, not a topic**. The thesis or worldview from this materi
 
 # Task — variants
 
-Draft the variants below. **Three strong variants beat four padded ones.** Set `pick_id` to your recommended choice — usually `best`, but pick another if the thread genuinely fits one (e.g. `question-first` when the open questions in the notes block any useful advice).
+Draft the variants below. **Three strong variants beat four padded ones.** Set `pick_id` to your recommended choice — usually `best`, but pick another if the thread genuinely fits one (e.g. `question` when the open questions in the notes block any useful advice).
 
-- **`best`** — your recommended reply: acknowledge one or two strengths, give 2-4 concrete fixes, include at least one visual observation when visual notes exist. Avoid sounding like an agency audit. Usually 150-300 words.
-- **`short`** — shortest useful review: one strength, one or two highest-leverage fixes. 60-130 words.
-- **`structured-review`** — *use only when OP explicitly asked for critique/review and the findings justify structure.* Format: "What works:" / "What I would fix:" / "Biggest priority:" lists. Keep it postable as a Reddit comment, not an audit. Skip if the findings are sparse.
-- **`question-first`** — *only* if the review cannot be usefully completed without one or two facts (e.g. quote-only vs fixed pricing, intended customer, whether the linked page is a placeholder). Do NOT use this as an excuse to avoid giving visible-page feedback. 30-80 words.
+Variant labels here are aligned with reply-mode labels (SPEC_REPLY_REFINEMENT.md): `shorter` not `short`, `question` not `question-first`. Review mode keeps `structured-review` as its review-specific slot. There is no `counterpoint` or `warmer-personal` for review mode by default.
+
+- **`best`** / displayed as **Best Pick** — your recommended reply: acknowledge one or two strengths, give 2-4 concrete fixes, include at least one visual observation when visual notes exist. Avoid sounding like an agency audit. Usually 150-300 words.
+- **`shorter`** / displayed as **Shorter** — shortest useful review: one strength, one or two highest-leverage fixes. 60-130 words.
+- **`structured-review`** / displayed as **Structured-Review** — *use only when OP explicitly asked for critique/review and the findings justify structure.* Format: "What works:" / "What I would fix:" / "Biggest priority:" lists. Keep it postable as a Reddit comment, not an audit. Skip if the findings are sparse.
+- **`question`** / displayed as **Question** — *only* if the review cannot be usefully completed without one or two facts (e.g. quote-only vs fixed pricing, intended customer, whether the linked page is a placeholder). Do NOT use this as an excuse to avoid giving visible-page feedback. 30-80 words.
 
 # Hard rules — visual feedback grounding
 
@@ -159,7 +161,7 @@ Return a single JSON object exactly matching this shape, no other fields. Omit v
       "text": "...the actual reddit reply text the user would post, grounded in specific notes observations...",
       "reasoning": "one short sentence on the angle"
     },
-    {"id": "short", "label": "short", "text": "...", "reasoning": "..."},
+    {"id": "shorter", "label": "shorter", "text": "...", "reasoning": "..."},
     {"id": "structured-review", "label": "structured-review", "text": "...", "reasoning": "..."}
   ],
   "pick_id": "best"

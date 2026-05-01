@@ -7,10 +7,16 @@ import (
 	"github.com/viggy28/tider/internal/types"
 )
 
-// RenderMarkdown turns a ReplyBundle into a scannable human report,
-// matching the shape in SPEC_REPLY.md. Pick leads with full content;
-// other variants follow under "Alternatives". TTY-aware ANSI styling is
-// applied at the CLI layer (cmd/tider/term.go), not here.
+// RenderMarkdown turns a ReplyBundle into a scannable human report.
+// Pick leads under "## Best Pick"; other variants follow under
+// "## Alternative Picks". TTY-aware ANSI styling is applied at the CLI
+// layer (cmd/tider/term.go), not here.
+//
+// Per SPEC_REPLY_REFINEMENT.md "Output rendering" — the rendered
+// markdown contains ONLY the postable comments, never the per-draft
+// `reasoning` text. Reasoning is recorded in `drafts.json` for audit/
+// debug; surfacing it here would turn the output into a report about
+// the comments rather than the comments themselves.
 //
 // threadTitle is rendered in the header for context — the bundle alone
 // doesn't carry it. sessionPath is the absolute on-disk session
@@ -49,20 +55,14 @@ func RenderMarkdown(b *types.ReplyBundle, threadTitle string, sessionPath string
 	pick := findDraft(b.Drafts, b.PickID)
 	if pick != nil {
 		sb.WriteString("## Best Pick\n\n")
-		if pick.Reasoning != "" {
-			fmt.Fprintf(&sb, "> %s\n\n", pick.Reasoning)
-		}
 		fmt.Fprintf(&sb, "%s\n\n", strings.TrimSpace(pick.Text))
 	}
 
 	others := alternatives(b.Drafts, b.PickID)
 	if len(others) > 0 {
-		sb.WriteString("## Alternatives\n\n")
+		sb.WriteString("## Alternative Picks\n\n")
 		for _, d := range others {
 			fmt.Fprintf(&sb, "### %s\n\n", titleCaseLabel(d.Label))
-			if d.Reasoning != "" {
-				fmt.Fprintf(&sb, "*%s*\n\n", d.Reasoning)
-			}
 			fmt.Fprintf(&sb, "%s\n\n", strings.TrimSpace(d.Text))
 		}
 	}
@@ -110,19 +110,34 @@ func alternatives(drafts []types.ReplyDraft, pickID string) []types.ReplyDraft {
 }
 
 // displayLabel maps known variant ids to their spec-mandated display
-// form. SPEC_REPLY_REFINEMENT.md "Output rendering" defines the reply-
-// mode forms; SPEC_REVIEW_VISUAL_FIRECRAWL.md adds review-mode-specific
-// variants. Hyphen retention is per-label and intentional: compound
-// modifiers like "thread-aware" / "structured-review" keep the hyphen;
-// noun phrases like "personal-story" / "question-first" use spaces.
+// form. SPEC_REPLY_REFINEMENT.md (v2) "Output rendering" defines the
+// reply-mode forms and aligns review-mode labels (`shorter`/`question`
+// shared with reply mode; `structured-review` is review-only).
+//
+// Hyphen retention is per-label and intentional: compound modifiers
+// like "structured-review" keep the hyphen; the canonical "Warmer /
+// Personal" is rendered with explicit spacing per spec.
+//
+// Old ids from earlier specs (short / thread-aware / personal-story /
+// question-first / detailed) are kept in the map so old session
+// drafts.json files re-render with reasonable display labels. New
+// outputs use the v2 ids.
 var displayLabel = map[string]string{
-	"best":              "Best",
-	"short":             "Short",
-	"thread-aware":      "Thread-Aware",
-	"personal-story":    "Personal Story",
-	"question-first":    "Question First",
-	"detailed":          "Detailed",
+	// v2 reply-mode (SPEC_REPLY_REFINEMENT.md)
+	"best":            "Best",
+	"shorter":         "Shorter",
+	"counterpoint":    "Counterpoint",
+	"warmer-personal": "Warmer / Personal",
+	"question":        "Question",
+	// review-mode-specific
 	"structured-review": "Structured-Review",
+	// Legacy ids preserved so old session re-renders aren't ugly. Not
+	// produced by current prompts; keep for backward-compat only.
+	"short":          "Short",
+	"thread-aware":   "Thread-Aware",
+	"personal-story": "Personal Story",
+	"question-first": "Question First",
+	"detailed":       "Detailed",
 }
 
 // titleCaseLabel returns the display form of a draft label. Known labels

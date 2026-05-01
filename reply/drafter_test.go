@@ -28,8 +28,8 @@ func sampleDraftInput() *DraftInput {
 const goodDrafterResp = `{
   "drafts": [
     {"id":"best","label":"best","text":"Best draft text.","reasoning":"one sharp frame for solo store owner"},
-    {"id":"short","label":"short","text":"Short text.","reasoning":"shortest viable answer"},
-    {"id":"thread-aware","label":"thread-aware","text":"Engaging the batching pushback.","reasoning":"top comment's batching critique deserves a response"}
+    {"id":"shorter","label":"shorter","text":"Shorter text.","reasoning":"shortest viable answer"},
+    {"id":"counterpoint","label":"counterpoint","text":"Counterpoint engaging the batching pushback.","reasoning":"top comment's batching critique deserves a response"}
   ],
   "pick_id": "best"
 }`
@@ -50,7 +50,7 @@ func TestGenerateReplyHappyPath(t *testing.T) {
 	for _, d := range bundle.Drafts {
 		gotLabels[d.Label] = true
 	}
-	for _, want := range []string{"best", "short", "thread-aware"} {
+	for _, want := range []string{"best", "shorter", "counterpoint"} {
 		if !gotLabels[want] {
 			t.Errorf("missing variant %q in bundle", want)
 		}
@@ -124,7 +124,7 @@ func TestRenderReplyPromptIncludesContextAndAuthor(t *testing.T) {
 	}
 	checks := []string{
 		"r/shopify",
-		"Flair: Marketing",                   // flair threaded through (new)
+		"Flair: Marketing",                   // flair threaded through (PR #19)
 		"best plugins for performance?",
 		"Looking for plugin recs",
 		"alice", "Try X",                     // top comment leaked in
@@ -136,18 +136,45 @@ func TestRenderReplyPromptIncludesContextAndAuthor(t *testing.T) {
 		"From path",
 		"kova body content",
 		"notes body",
-		"Do not name or pitch the project",
+		"name or pitch the project",          // bold markup may surround "not"
 		"lens, not a topic",                  // context-as-lens guidance
 		"Sub-category inference",             // abstract category guidance, not named-sub list
-		"thread-aware",                       // new variant slot
-		"personal-story",                     // new variant slot
-		"Fabricate first-person experience",  // explicit ban on fake autobiography
-		"Repeat the consensus",               // engage-don't-duplicate rule
+		// v2 variant slots — these are the labels the prompt asks the model to emit.
+		"`shorter`",
+		"`counterpoint`",
+		"`warmer-personal`",
+		"`question`",
+		// Distinct-frame rule (new in v2)
+		"Distinct-frame rule",
+		// Bullet rule (new in v2)
+		"Bullet rule",
+		// First-person ban + consensus-repeat ban (carried over)
+		"Fabricate first-person experience",
+		"Repeat the consensus",
 		"Anti-tells",
 	}
 	for _, s := range checks {
 		if !strings.Contains(prompt, s) {
 			t.Errorf("prompt missing %q\n--- prompt ---\n%s", s, prompt)
+		}
+	}
+	// V2 removes `detailed` entirely and renames `short` → `shorter`,
+	// `thread-aware` → `counterpoint`, `personal-story` → `warmer-personal`,
+	// `question-first` → `question`. The regression-guard checks for the
+	// slot-definition format used in the prompt's task list ( **`label`** )
+	// rather than any mention of the legacy name — the prompt itself is
+	// allowed to say "there is no `detailed` variant" as a model-facing
+	// instruction.
+	bannedSlotDefinitions := []string{
+		"**`detailed`**",
+		"**`thread-aware`**",
+		"**`personal-story`**",
+		"**`question-first`**",
+		"**`short`**",
+	}
+	for _, b := range bannedSlotDefinitions {
+		if strings.Contains(prompt, b) {
+			t.Errorf("prompt should not define legacy/removed variant slot %q (v2 spec)\n--- prompt ---\n%s", b, prompt)
 		}
 	}
 }

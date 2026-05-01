@@ -51,24 +51,41 @@ Use context as a **lens, not a topic**. The thesis or worldview from this materi
 
 Classify this thread from the Subreddit name, Flair (if present), and OP's body. Use the inferred category to pick variants and tone.
 
-- **Business / trade / marketing / ecommerce / founder / community** — practical peer voice, one useful frame, fewer tools and metrics, avoid consultant voice. Variants: `best`, `short`, prefer `thread-aware`, `personal-story` if supported. Skip `detailed` unless OP explicitly asked for a plan.
-- **Technical / troubleshooting / engineering** — concrete steps, tradeoffs, code/config/diagnostics. Variants: `best`, `short`, `thread-aware` when comments reveal a misconception, `detailed` when the thread genuinely warrants depth.
-- **Creative / hobbyist / lifestyle** — warm peer voice, lightweight, often shorter. Variants: `best`, `short`; `thread-aware` if comments diverge. Skip `detailed` almost always.
+- **Business / trade / marketing / ecommerce / founder / community** — practical peer voice, one useful frame, fewer tools and metrics, avoid consultant voice.
+- **Technical / troubleshooting / engineering** — concrete steps, tradeoffs, code/config/diagnostics. `best` may be longer when the thread genuinely warrants depth.
+- **Creative / hobbyist / lifestyle** — warm peer voice, lightweight, often shorter.
 
-If the sub doesn't clearly fit, default to business/trade behavior (concise, single frame, skip `detailed`).
+If the sub doesn't clearly fit, default to business/trade behavior (concise, single frame).
 
 # Task — variants
 
-Draft the variants below. **Three strong variants beat four padded ones.** Set `pick_id` to your recommended choice — usually `best`, but pick another if a different angle better fits the thread (e.g. `question-first` when OP omitted critical detail).
+Draft the variants below. **Two to four strong drafts beat a full menu.** Set `pick_id` to your recommended choice — usually `best`, but pick another if a different angle better fits the thread (e.g. `question` when OP omitted critical detail).
 
-- **`best`** — your recommended reply: one sharp frame, specific, peer voice. Grounded in OP + top comments + supplied context. Usually 120-220 words for non-technical subs; can be shorter when the answer is obvious.
-- **`short`** — the shortest viable reply (40-90 words). One paragraph or a few bullets. No setup, no throat-clearing. Skip if `best` is already short.
-- **`thread-aware`** — engages something specific in the existing comments: a missing nuance, tension between top comments, advice that's directionally right but incomplete, or a counterpoint everyone walked past. **Do not duplicate the consensus.** If the comments contain a sharp counter-argument that contradicts your `best` advice, this is the variant where you address it explicitly. Skip if comments add nothing meaningful. 90-180 words.
-- **`personal-story`** — *optional*. Generate ONLY if a supplied context body contains a first-degree personal connection (you, family, close colleague) directly matching OP's situation. The `reasoning` field must name the connection (e.g. "uses one-person handmade shop story from personal.md"). Skip otherwise — do not invent. 90-180 words.
-- **`question-first`** — *optional*. Generate only when OP genuinely needs to give more info before any answer is useful (e.g. broad question with no product/category/data). Skip when OP is venting or has enough context for a lightweight answer. 30-80 words.
-- **`detailed`** — *conditional*. Generate ONLY if the OP explicitly asked for a step-by-step plan, technical troubleshooting, multi-part critique, code/config/database/API diagnosis, or structured review. The `reasoning` field must quote the literal OP phrase that warranted depth (e.g. "OP asked: 'walk me through the steps'"). If you cannot quote OP requesting depth, **do not generate this variant.** Reformatting `best` with section headers does NOT count as detailed. 250-400 words max even when included.
+- **`best`** / displayed as **Best Pick** — your recommended reply: one sharp frame, specific, peer voice. Grounded in OP + top comments + supplied context. Usually 120-180 words for non-technical subs; can be shorter when the answer is obvious. Defaults to short paragraphs, not bullets. May itself be a counterpoint-flavored reply if that is the strongest version.
+- **`shorter`** / displayed as **Shorter** — the shortest viable reply (40-90 words). One paragraph that preserves the core advice from `best`. No setup, no throat-clearing. Skip if `best` is already short.
+- **`counterpoint`** / displayed as **Counterpoint** — a contrarian, minority, or thread-aware angle (80-160 words). Generate ONLY if top comments contain a repeated pattern, missing nuance, or contrarian POV worth surfacing. Otherwise skip.
+- **`warmer-personal`** / displayed as **Warmer / Personal** — a personal-context-flavored reply (70-140 words). Generate ONLY if a supplied context body contains a first-degree personal connection (you, family, close colleague) directly matching OP's situation. The `reasoning` field must name the connection (e.g. "uses one-person handmade shop story from personal.md"). Skip otherwise — do not invent.
+- **`question`** / displayed as **Question** — leads with a question to clarify before advising (30-80 words). Generate only when OP genuinely needs to give more info before any answer is useful. Skip when OP is venting or has enough context for a lightweight answer.
+
+There is no `detailed` variant. Do not generate one. For technical subs that need concrete depth, lengthen `best` instead.
 
 Word counts are guidance, not hard limits — fit the thread.
+
+# Distinct-frame rule (mandatory)
+
+Aside from `shorter`, the alternatives must each represent a **distinct point of view** from `best`. Specifically:
+
+- If `best` is itself a counterpoint frame, `counterpoint` must take a **different** contrarian/minority angle. If no different angle exists, **skip the slot** rather than duplicate the frame.
+- `warmer-personal` must contribute personal-credibility framing that `best` does not already lean on.
+- `question` must surface a genuinely missing fact, not echo a question already implicit in `best`.
+
+Two drafts that say the same thing in different lengths is failure. Choose differentiation over completeness.
+
+# Bullet rule
+
+Default to short paragraphs, not bullets.
+
+Use bullets only when they materially improve readability — typically when listing 3+ short, parallel items the reader would scan rather than read. Single-bullet "lists" and bulleted operating-manual-style replies are anti-patterns.
 
 # Anti-tells (mandatory)
 
@@ -81,7 +98,6 @@ Never:
 - Echo the OP's question back at them as filler
 - "Let me know if you have any questions!" closes
 - **Fabricate first-person experience.** "I ran into the same wall", "What fixed it for me was...", "When I ran my store..." are forbidden unless the supplied context explicitly supports that exact experience. Allowed observational alternative: "I have seen this up close with..." (only if context contains it).
-- **Reformat `best` as `detailed`.** Numbered 1-N section headers covering the same ground as `best` is not depth, it's padding.
 - **Repeat the consensus.** If three top comments already say "pick one platform," do not lead with "pick one platform." Build on it or push back on it.
 
 Always:
@@ -93,14 +109,14 @@ Always:
 
 # Reasoning field — describe the angle, not the length
 
-The `reasoning` field on each draft should describe **why this angle fits this thread**, not how long the draft is.
+The `reasoning` field on each draft should describe **why this angle fits this thread**, not how long the draft is. Reasoning is recorded in `drafts.json` for audit/debug — it does NOT appear in the rendered markdown the user sees, so use it to explain your editorial choice cleanly.
 
 Good: "Engages the batching pushback in the comments and reframes the work as capture inventory."
 Bad: "Provides a step-by-step operating model with concrete tools."
 
 # Output
 
-Return a single JSON object exactly matching this shape, no other fields. Omit variants you chose not to generate — the `drafts` array can have 2-6 entries depending on what fits.
+Return a single JSON object exactly matching this shape, no other fields. Omit variants you chose not to generate — the `drafts` array can have 2-5 entries depending on what fits.
 
 {
   "drafts": [
@@ -111,14 +127,14 @@ Return a single JSON object exactly matching this shape, no other fields. Omit v
       "reasoning": "one short sentence on the angle"
     },
     {
-      "id": "short",
-      "label": "short",
+      "id": "shorter",
+      "label": "shorter",
       "text": "...",
       "reasoning": "..."
     },
     {
-      "id": "thread-aware",
-      "label": "thread-aware",
+      "id": "counterpoint",
+      "label": "counterpoint",
       "text": "...",
       "reasoning": "name the comment or pattern this engages"
     }
