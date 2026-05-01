@@ -289,7 +289,7 @@ func TestRenderReviewPromptIncludesV2RefinementRules(t *testing.T) {
 	hardCapChecks := []string{
 		"MAX 3 fixes",                 // explicit hard cap on Best Pick fix list
 		"150-260 words",               // tighter word budget than the old 150-300
-		"2-3 entries",                 // drafts array cap (down from 2-4)
+		"2 entries by default",        // drafts array default (was 2-3 before this PR)
 		"emitting a full slate makes", // failure-mode note guarding the cap
 	}
 	for _, s := range hardCapChecks {
@@ -345,8 +345,8 @@ func TestRenderReviewPromptIncludesV2RefinementRules(t *testing.T) {
 		"Kova lens",
 		"reshaped",
 		"real-use imagery",
-		"workers wearing PPE",          // concrete B2B example
-		"reusable organic content",     // organic-content reuse angle
+		"workers wearing PPE",            // concrete B2B example
+		"organic-content reuse",          // channel-reuse angle (renamed from "reusable organic content")
 	}
 	for _, s := range kovaChecks {
 		if !strings.Contains(prompt, s) {
@@ -368,5 +368,117 @@ func TestRenderReviewPromptIncludesV2RefinementRules(t *testing.T) {
 	}
 	if strings.Contains(prompt, "displayed as **Structured-Review**") {
 		t.Errorf("review prompt still references the legacy 'Structured-Review' (hyphen) form\n--- prompt ---\n%s", prompt)
+	}
+}
+
+// SPEC: prose-tightening PR — three new prompt rules. The drafter must
+// (1) refuse the checklist wrapper template in Best Pick, (2) gate
+// Structured Review behind an explicit OP request for structure, and
+// (3) require a channel-reuse line whenever Best Pick recommends visual
+// proof. These tests assert the prompt actually carries those rules.
+
+// (1) Best Pick must read as a Reddit comment, not a structured review.
+// The "Top fixes by [impact|leverage]" wrapper + numbered fix list is
+// the exact pattern the prior runs produced and the spec wants killed.
+func TestRenderReviewPromptForbidsChecklistWrapper(t *testing.T) {
+	in := sampleReviewInput()
+	prompt, err := RenderReviewPrompt(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The prompt should explicitly forbid the checklist wrapper template.
+	wrapperBans := []string{
+		"FORBIDDEN",                          // strong signal that templates follow
+		"Top fixes by impact:",               // exact wrapper phrasing observed in prior runs
+		"Top fixes by leverage:",             // and its sibling
+		"If you do one thing today:",         // the closer pattern observed
+		"numbered fix lists",                 // explicit ban
+		"`1) ... 2) ... 3) ...`",             // concrete pattern
+		"Reddit comments meander",            // tone instruction reinforcing prose-not-list
+		"You are writing a Reddit comment",   // explicit framing
+	}
+	for _, s := range wrapperBans {
+		if !strings.Contains(prompt, s) {
+			t.Errorf("review prompt missing checklist-wrapper ban %q\n--- prompt ---\n%s", s, prompt)
+		}
+	}
+
+	// Anti-tells should also call out the wrapper patterns explicitly so
+	// the model sees the rule from two directions.
+	antiTellChecks := []string{
+		"Numbered fix lists in `Best Pick`",
+		"Section-header wrappers in `Best Pick`",
+		"\"Top fixes by impact:\"",
+		"\"Quick win:\"",
+	}
+	for _, s := range antiTellChecks {
+		if !strings.Contains(prompt, s) {
+			t.Errorf("review prompt missing anti-tell %q\n--- prompt ---\n%s", s, prompt)
+		}
+	}
+}
+
+// (2) Structured Review trigger must be tightened. Currently the slot
+// fires almost every review run. The new rule: only fire when OP
+// explicitly asks for a STRUCTURED format. Bare "review my site"
+// requests don't count.
+func TestRenderReviewPromptTightensStructuredReviewTrigger(t *testing.T) {
+	in := sampleReviewInput()
+	prompt, err := RenderReviewPrompt(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	triggerChecks := []string{
+		"Structured Review trigger",   // dedicated section
+		"off by default",              // strong default signal
+		"Pros and cons?",              // example trigger phrase
+		"Looking for review/criticism", // example NON-trigger
+		"Roast my site",               // example NON-trigger
+		"2 drafts",                    // default count: best + shorter only
+		"second audit",                // failure-mode framing
+	}
+	for _, s := range triggerChecks {
+		if !strings.Contains(prompt, s) {
+			t.Errorf("review prompt missing structured-review trigger rule %q\n--- prompt ---\n%s", s, prompt)
+		}
+	}
+
+	// Anti-tell coverage too.
+	if !strings.Contains(prompt, "Generating `structured-review` when OP didn't explicitly ask for structure") {
+		t.Errorf("review prompt missing structured-review anti-tell\n--- prompt ---\n%s", prompt)
+	}
+}
+
+// (3) When Best Pick recommends visual proof, the comment MUST include
+// one explicit channel-reuse sentence. Promotes the rule from soft
+// bias (current behavior in two recent runs both missed it) to a
+// mandatory line tied to the shop type.
+func TestRenderReviewPromptMandatesChannelReuseLine(t *testing.T) {
+	in := sampleReviewInput()
+	prompt, err := RenderReviewPrompt(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	channelReuseChecks := []string{
+		"Channel-reuse line — MANDATORY",   // dedicated section header
+		"non-optional when visual proof is in the fix list",
+		"those same visuals double as content for", // the canonical phrasing pattern
+		"LinkedIn / case-study posts / sales follow-up", // B2B channel example
+		"IG / TikTok",                                   // handmade/boutique channel example
+		"Forbidden phrasings",                           // forbidden non-channel phrasings listed
+		"That doubles as proof and helps buyers",        // the exact phrasing from a prior run that didn't satisfy the rule
+	}
+	for _, s := range channelReuseChecks {
+		if !strings.Contains(prompt, s) {
+			t.Errorf("review prompt missing channel-reuse rule %q\n--- prompt ---\n%s", s, prompt)
+		}
+	}
+
+	// Anti-tell coverage.
+	if !strings.Contains(prompt, "Recommending visual proof without the channel-reuse line") {
+		t.Errorf("review prompt missing channel-reuse anti-tell\n--- prompt ---\n%s", prompt)
 	}
 }

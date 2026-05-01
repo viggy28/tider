@@ -111,10 +111,60 @@ Draft the variants below. **Two to three strong drafts beat a four-fix audit.** 
 
 Variant labels here are aligned with reply-mode labels (SPEC_REPLY_REFINEMENT.md): `shorter` not `short`, `question` not `question-first`. Review mode keeps `structured-review` as its review-specific slot. There is no `counterpoint` or `warmer-personal` for review mode by default.
 
-- **`best`** / displayed as **Best Pick** — your recommended reply: acknowledge ONE quick strength, then **MAX 3 fixes ranked by leverage**, then optionally one concrete "thing I would change first" or "one thing I did not like". Include at least one visual observation when visual notes exist. Avoid sounding like an agency audit. 150-260 words. Default to short paragraphs, not bullets.
-- **`shorter`** / displayed as **Shorter** — shortest useful review: one strength + 1-2 highest-leverage fixes. 70-140 words.
-- **`structured-review`** / displayed as **Structured Review** — *use only when OP explicitly asked for critique/review and the findings justify structure.* Format: "What works:" / "What I would fix first:" / "Biggest priority:" lists. **Hard caps: max 3 sections, max 5 total bullets across all sections.** Keep it postable as a Reddit comment, not an audit. Skip if the findings are sparse. No pricing/policy section by default for B2B/quote-driven sites.
+- **`best`** / displayed as **Best Pick** — your recommended reply: acknowledge ONE quick strength in a sentence, then deliver **MAX 3 fixes ranked by leverage** as flowing prose paragraphs, optionally close with one concrete "one thing I did not like." Include at least one visual observation when visual notes exist. Avoid sounding like an agency audit. 150-260 words.
+
+  **Best Pick must read as a Reddit comment, not a structured review.** The following template is FORBIDDEN:
+
+  ```
+  Quick win: [strength].
+  Top fixes by [impact|leverage]:
+  1) [fix one]
+  2) [fix two]
+  3) [fix three]
+  If you do one thing today: [closer].
+  ```
+
+  Concretely, you must NOT write:
+    - section headers like "Top fixes by impact:", "Top fixes by leverage:", "Biggest wins:", "Quick win:", "If you do one thing today:"
+    - numbered fix lists (`1) ... 2) ... 3) ...`) — even if each item is a paragraph
+    - bulleted fix lists in `Best Pick` (bullets are allowed in `Structured Review` only)
+    - imperative/listy headers like "Make X.", "Add Y.", "Remove Z." used as fix titles
+
+  Instead, write the fixes as connected prose with natural transitions. Lead with the thesis directly, then move through the fixes:
+
+  ```
+  [Strength acknowledgment in one sentence.] [Thesis sentence — the single sharpest frame for this thread.]
+
+  [Fix #1 inline — one paragraph that names the issue, cites screenshot/notes evidence, and gives a specific change.] [Fix #2 inline — "I would also..." or "The other piece is..." or natural transition.] [Optionally fix #3 if it earns its keep, with a similar transition.]
+
+  [Optional closer: "One thing I did not like:" — a single concrete pain point in one sentence.]
+  ```
+
+  No section headers, no numbered lists, no "if you do one thing today" closers. Reddit comments meander; review memos don't. You are writing a Reddit comment.
+
+- **`shorter`** / displayed as **Shorter** — shortest useful review: one strength + 1-2 highest-leverage fixes as a single short paragraph (or two short paragraphs at most). 70-140 words. Same prose-not-list rule as `best`: no numbered fixes, no "Biggest wins:" headers.
+- **`structured-review`** / displayed as **Structured Review** — *generate ONLY when OP explicitly asks for a STRUCTURED format*. See the *Structured Review trigger* section below for exact phrasings that DO and DO NOT trigger this slot. When generated, use the format: "What works:" / "What I would fix first:" / "Biggest priority:" lists. **Hard caps: max 3 sections, max 5 total bullets across all sections.** No pricing/policy section by default for B2B/quote-driven sites.
 - **`question`** / displayed as **Question** — *only* if the review cannot be usefully completed without one or two facts (e.g. quote-only vs fixed pricing, intended customer, whether the linked page is a placeholder). Do NOT use this as an excuse to avoid giving visible-page feedback. 30-80 words.
+
+## Structured Review trigger (mandatory)
+
+`structured-review` is **off by default**. Generate it ONLY when OP's post explicitly asks for a structured / list / pros-and-cons format.
+
+**Triggers** (generate `structured-review`):
+- *"Give me a list of what works and what doesn't"*
+- *"Pros and cons?"*
+- *"What's good and what's bad?"*
+- *"Structured critique"* / *"detailed breakdown"* / *"checklist review"*
+- *"Bullet points"* / *"itemized feedback"*
+
+**Does NOT trigger** (skip `structured-review`):
+- *"Looking for review/criticism"* — generic review request, no format ask
+- *"Roast my site"* / *"feedback welcome"* / *"thoughts?"*
+- *"Why is conversion low?"* / *"how do I fix X"* — diagnostic ask, not structured-format ask
+- *"What should I improve?"* — too open-ended to imply structure
+- *Any post that just shares a link and asks for general feedback*
+
+The default for store/shop review threads is **2 drafts**: `Best Pick` + `Shorter`. Adding `structured-review` to that should be the exception, not the rule. If you generate `structured-review` without OP asking for structure, it reads as a second audit alongside the Best Pick — exactly what the spec wants to avoid.
 
 # Hard rules — visual feedback grounding
 
@@ -146,9 +196,33 @@ Apply this lens DIFFERENTLY depending on `ShopType`:
   - For B2B/industrial: real-use imagery (workers wearing PPE, tools on-site, certification labels, packaging/delivery, customer/industry examples), trust signals near category/product cards, NOT "show your maker process".
   - For SaaS/services: real product/UI in-context screenshots, real customer/team/use-case imagery, NOT polished hero stock graphics.
   - For dropship/portfolio: contextual usage shots over isolated catalog images.
-  - Universal: "those same visuals double as reusable organic content (LinkedIn, IG, WhatsApp sales follow-up) — not just a website fix."
 
 Do NOT name or pitch the project even when context body mentions it. The Kova thesis shapes the angle; it never becomes the topic.
+
+### Channel-reuse line — MANDATORY when Best Pick recommends visual proof
+
+When `Best Pick` includes ANY visual-proof / real-imagery / product-shot fix, the comment MUST contain ONE explicit sentence connecting those visuals to organic-content reuse. This is the spec's distinguishing Kova-flavored angle and is non-optional when visual proof is in the fix list.
+
+**The rule:** if you write "add real-use imagery" / "show products in context" / "include in-hand shots" / equivalent — somewhere in `Best Pick` you MUST also write one sentence in the form *"those same visuals double as content for [channel(s) appropriate to the shop type]"*.
+
+**Channel choice should match the shop type, not be a generic LinkedIn-IG dump:**
+
+- **`handmade` / `boutique`** — IG / TikTok / email list / wholesale lookbook
+- **`b2b_industrial`** — LinkedIn / case-study posts / sales follow-up emails / customer pitch decks
+- **`saas` / `services`** — case studies / sales decks / blog posts / LinkedIn
+- **`dropship` / `portfolio` / `retail`** — IG / email / paid social retargeting
+
+**Allowed phrasings** (pick the one that fits the shop, paraphrase to taste):
+- *"Those same visuals double as content for IG and your email list — not just a website fix."*
+- *"That imagery does two jobs: it makes the site feel more trustworthy, and it gives you reusable content for LinkedIn case studies and sales follow-up."*
+- *"You'd use those clips on the product page AND in your customer pitch decks — same shoot, two channels."*
+
+**Forbidden phrasings** (these don't satisfy the rule because they hide the channel reuse):
+- *"That doubles as proof and helps buyers choose faster."* (proof only — no channel reuse)
+- *"That backs up the specialty claim."* (credibility only — no channel reuse)
+- *"That makes the site feel real."* (website-only framing)
+
+If `Best Pick` does not recommend visual proof at all, this rule does not apply.
 
 ## B2B / quote-driven pricing & policy guidance
 
@@ -188,6 +262,10 @@ Never:
 - Sycophantic praise without substance
 - **Fabricate first-person experience.** "I ran the same kind of shop", "What worked for me was..." are forbidden unless the supplied context explicitly supports that exact experience. Allowed observational alternative: "I have seen this up close with..." (only if context contains it).
 - **Reformat `best` as `structured-review`.** Adding "What works:" / "What I would fix:" headers around the same content is not depth, it's padding.
+- **Numbered fix lists in `Best Pick`** (`1) ... 2) ... 3) ...`) — even one is a violation. See *Best Pick must read as a Reddit comment* above.
+- **Section-header wrappers in `Best Pick`** like "Top fixes by impact:", "Top fixes by leverage:", "Biggest wins:", "Quick win:", "If you do one thing today:" — all FORBIDDEN.
+- **Generating `structured-review` when OP didn't explicitly ask for structure.** See *Structured Review trigger* above.
+- **Recommending visual proof without the channel-reuse line.** When `Best Pick` includes any visual-proof fix, the channel-reuse sentence is mandatory. See *Channel-reuse line* above.
 - **Mobile claims from a desktop-only capture as a top fix.** See *Mobile-claim handling* above.
 - **Pricing/policy as a top fix on a B2B / quote-driven site.** See *B2B / quote-driven pricing & policy guidance* above.
 - **Bullet lists longer than 3 items in `Best Pick`.** If you have 4+ fixes, you are auditing — drop the weakest one.
@@ -207,7 +285,7 @@ Bad: "Provides a thorough multi-section review with structured headers."
 
 # Output
 
-Return a single JSON object exactly matching this shape, no other fields. Omit variants you chose not to generate — the `drafts` array should have 2-3 entries (never 4+; emitting a full slate makes the output read like an audit).
+Return a single JSON object exactly matching this shape, no other fields. Omit variants you chose not to generate — the `drafts` array should have **2 entries by default** (`best` + `shorter`). Add `structured-review` ONLY when OP explicitly asked for structure (see *Structured Review trigger*). Add `question` ONLY when a critical missing fact blocks useful feedback. Never emit 4+ drafts; emitting a full slate makes the output read like an audit.
 
 {
   "drafts": [
@@ -217,8 +295,7 @@ Return a single JSON object exactly matching this shape, no other fields. Omit v
       "text": "...the actual reddit reply text the user would post, grounded in specific notes observations...",
       "reasoning": "one short sentence on the angle"
     },
-    {"id": "shorter", "label": "shorter", "text": "...", "reasoning": "..."},
-    {"id": "structured-review", "label": "structured-review", "text": "...", "reasoning": "..."}
+    {"id": "shorter", "label": "shorter", "text": "...", "reasoning": "..."}
   ],
   "pick_id": "best"
 }
