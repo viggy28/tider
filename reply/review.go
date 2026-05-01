@@ -70,10 +70,18 @@ func BuildReviewNotes(ctx context.Context, p llm.Provider, model string, inspect
 // — comments are NOT included in review-mode prompts because the user
 // isn't replying to the conversation, they're reviewing the OP's
 // resource.
+//
+// VisualNotes is populated when review mode ran the visual analyzer
+// (FIRECRAWL_API_KEY + vision-capable model). It carries screenshot/
+// product-image observations that the drafter prompt cites alongside
+// the text-derived Notes. May be nil for threads where visual analysis
+// genuinely produced nothing (rare; review mode requires a screenshot
+// per SPEC_REVIEW_VISUAL_FIRECRAWL.md).
 type ReviewDraftInput struct {
 	Thread        *types.Thread
 	Mode          *types.ReplyModeResult
 	Notes         *types.ReviewNotes
+	VisualNotes   *types.VisualReviewNotes
 	Contexts      []types.LoadedReplyContext
 	AuthorContext string
 }
@@ -157,6 +165,7 @@ func renderReviewPrompt(input *ReviewDraftInput) (string, error) {
 		Weaknesses    []string
 		Suggestions   []string
 		OpenQuestions []string
+		VisualNotes   *types.VisualReviewNotes
 		AuthorContext string
 		Contexts      []types.LoadedReplyContext
 	}{
@@ -168,6 +177,7 @@ func renderReviewPrompt(input *ReviewDraftInput) (string, error) {
 		Weaknesses:    input.Notes.Weaknesses,
 		Suggestions:   input.Notes.Suggestions,
 		OpenQuestions: input.Notes.OpenQuestions,
+		VisualNotes:   input.VisualNotes,
 		AuthorContext: input.AuthorContext,
 		Contexts:      input.Contexts,
 	})

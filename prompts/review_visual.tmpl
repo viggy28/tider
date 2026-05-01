@@ -1,0 +1,101 @@
+You are analyzing a website screenshot to produce structured visual review notes. Another LLM call will use these notes to draft a Reddit comment that gives the page owner concrete, specific feedback.
+
+You are looking at:
+
+- a full-page screenshot of the captured page (attached as image)
+{{- if .ImageURLs }}
+- {{len .ImageURLs}} additional product/page image(s) extracted from the page (attached separately)
+{{- end }}
+
+# Target page
+
+URL: {{.TargetURL}}
+{{- if .Title }}
+Page title: {{.Title}}
+{{- end }}
+{{- if .MetaDescription }}
+Meta description: {{.MetaDescription}}
+{{- end }}
+{{- if .Headings }}
+
+## Headings (from the markdown extraction, for grounding)
+{{- range .Headings }}
+- (h{{.Level}}) {{.Text}}
+{{- end }}
+{{- end }}
+{{- if .Contexts }}
+
+# Context (project material — background only, do NOT pitch)
+{{- range .Contexts }}
+
+## From {{.Source}}{{if .ID}} ({{.ID}}){{end}}
+
+{{.Body}}
+{{- end }}
+{{- end }}
+
+# Task
+
+Step 1 — Classify the shop/page type into ONE of:
+
+- `handmade` — solo or small-team artisan/handmade goods (Etsy-shaped, ceramic, textile, jewelry, woodworking, art prints, etc.)
+- `boutique` — small curated brand, often single-product or small catalog, owner-operated, lifestyle/fashion/beauty
+- `dropship` — generic catalog with many SKUs, stock photos, no maker/origin signals, AliExpress-shaped
+- `b2b_industrial` — wholesale/equipment/industrial supplier, business buyers, quote-driven, technical specs
+- `saas` — software product, sign-up funnel, feature/pricing pages
+- `services` — agency/consultancy/freelancer offering services, not products
+- `portfolio` — personal site, work showcase, no commerce
+- `unclear` — when the screenshot doesn't give you enough to choose
+
+Step 2 — Produce visual observations across these areas (skip any that don't apply):
+
+- `above_fold` — clarity in the first viewport: what is this site, who is it for, what action can I take?
+- `product_images` — quality, consistency, scale clarity, lighting, background, hero shots
+- `trust` — authenticity signals: real-product proof, packaging, maker/process visibility, reviews/testimonials visible, badges
+- `navigation` — header structure, category clarity, can I find what I'm looking for in 2 clicks
+- `pricing_cta` — visible price or quote path, primary CTA prominence, friction in the buy/contact action
+- `mobile_risk` — visible-from-screenshot risks for mobile: tiny text, dense layout, off-canvas content, image-heavy hero
+- `brand` — color/typography/voice consistency across visible sections
+- `generic_risk` — does this page look stock/AI-generated/dropship/templated? Cite the specific visual features that triggered the read.
+
+Each observation MUST cite specific visible evidence (e.g. "the hero section uses three different button styles for the primary CTA" — not "CTAs are inconsistent"). If you can't cite evidence, don't include the observation.
+
+Step 3 — KovaSignals (gated by ShopType).
+
+Populate `kova_signals` ONLY if `shop_type` is `handmade` or `boutique`. The Kova thesis: handmade buyers need to *trust the product is real* — that means visible proof of scale, texture, material, function, packing, and process. KovaSignals capture observations specifically about that proof:
+
+- "no in-hand or scale shot in the first 2 product images"
+- "texture is invisible at the photo crops shown"
+- "no process/maker clip; site reads as dropship-flavored despite handmade copy"
+- "packing/order shots could double as trust signals"
+
+For any other ShopType (dropship, b2b_industrial, saas, services, portfolio, unclear), `kova_signals` MUST be an empty array `[]`. Do NOT recommend "show your maker process" to a B2B equipment supplier or SaaS landing page — the Kova thesis doesn't apply.
+
+# Hard rules
+
+- Do NOT name the project or pitch it. Even if context mentions "Kova", never write the word in your output.
+- Do NOT infer behavior you can't see: checkout flow, page speed, mobile rendering not in the screenshot, conversion rates, inventory, prices not visible.
+- Do NOT fabricate observations. If the screenshot is partial or low-quality, list that in `limitations`.
+- Severity: `high` for observations that materially hurt trust or conversion; `medium` for clear-but-fixable issues; `low` for polish-level notes.
+- Recommendations should be one specific actionable change, not "improve your branding".
+
+# Output
+
+Return a single JSON object exactly matching this shape, no other fields:
+
+{
+  "shop_type": "handmade",
+  "summary": "one-sentence read of the page overall",
+  "observations": [
+    {
+      "area": "above_fold",
+      "finding": "specific visible issue",
+      "evidence": "what in the screenshot supports this",
+      "severity": "high|medium|low",
+      "recommendation": "one specific actionable change"
+    }
+  ],
+  "kova_signals": ["..."],
+  "questions": ["things you'd ask the owner that the screenshot can't answer"],
+  "limitations": ["e.g. screenshot only covers homepage; mobile not inspected"]
+}

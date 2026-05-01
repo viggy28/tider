@@ -234,6 +234,85 @@ func TestInspectFirecrawlErrorDoesNotFallBackToHTML(t *testing.T) {
 	}
 }
 
+// SPEC_REVIEW_VISUAL_FIRECRAWL.md mandates that review mode require
+// Firecrawl + a screenshot. InspectReviewTarget enforces both invariants
+// and produces explicit errors callers can route around with
+// `--mode=reply`.
+
+func TestInspectReviewTargetRequiresFirecrawlKey(t *testing.T) {
+	t.Setenv("FIRECRAWL_API_KEY", "")
+	_, err := InspectReviewTarget(context.Background(), &http.Client{}, "https://example.com/")
+	if err == nil {
+		t.Fatal("expected error when FIRECRAWL_API_KEY is unset")
+	}
+	if !strings.Contains(err.Error(), "FIRECRAWL_API_KEY") {
+		t.Errorf("error should name the missing env var: %v", err)
+	}
+	if !strings.Contains(err.Error(), "--mode=reply") {
+		t.Errorf("error should hint at the --mode=reply escape hatch: %v", err)
+	}
+}
+
+func TestInspectReviewTargetRequiresScreenshot(t *testing.T) {
+	// Firecrawl returns success but with no screenshot URL.
+	resp := `{
+  "success": true,
+  "data": {
+    "markdown": "# Welcome",
+    "metadata": {"title": "X", "statusCode": 200}
+  }
+}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(resp))
+	}))
+	defer srv.Close()
+	prev := firecrawlAPIBase
+	firecrawlAPIBase = srv.URL
+	defer func() { firecrawlAPIBase = prev }()
+	t.Setenv("FIRECRAWL_API_KEY", "test-key")
+
+	_, err := InspectReviewTarget(context.Background(), &http.Client{}, "https://example.com/")
+	if err == nil {
+		t.Fatal("expected error when Firecrawl returns no screenshot")
+	}
+	if !strings.Contains(err.Error(), "screenshot") {
+		t.Errorf("error should name the missing screenshot: %v", err)
+	}
+}
+
+func TestInspectReviewTargetHappyPath(t *testing.T) {
+	resp := `{
+  "success": true,
+  "data": {
+    "markdown": "# Welcome\n\nReal content.",
+    "screenshot": "https://firecrawl-cdn.example/sig/abc.png",
+    "links": [],
+    "metadata": {"title": "Shop", "statusCode": 200}
+  }
+}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(resp))
+	}))
+	defer srv.Close()
+	prev := firecrawlAPIBase
+	firecrawlAPIBase = srv.URL
+	defer func() { firecrawlAPIBase = prev }()
+	t.Setenv("FIRECRAWL_API_KEY", "test-key")
+
+	insp, err := InspectReviewTarget(context.Background(), &http.Client{}, "https://example.com/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if insp.Source != "firecrawl" {
+		t.Errorf("Source = %q", insp.Source)
+	}
+	if insp.ScreenshotURL == "" {
+		t.Error("ScreenshotURL should be populated on happy path")
+	}
+}
+
 func TestCollapseWhitespace(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"  hello  world  ", "hello world"},

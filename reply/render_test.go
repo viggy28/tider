@@ -103,15 +103,60 @@ func TestRenderMarkdownNilBundle(t *testing.T) {
 	}
 }
 
+// Review-mode renders an inspection-depth header showing what was
+// inspected. Reply-mode bundles (Inspection nil) render the previous
+// shape unchanged. Per SPEC_REVIEW_VISUAL_FIRECRAWL.md "Output rendering".
+func TestRenderMarkdownReviewModeShowsInspectionHeader(t *testing.T) {
+	b := sampleBundle()
+	b.Mode = types.ReplyModeReview
+	b.Inspection = &types.InspectionSummary{
+		Source:         "firecrawl",
+		ScreenshotPath: "/sessions/abc/screenshots/homepage.png",
+		ImagesAnalyzed: 4,
+		ShopType:       "handmade",
+		Limitations:    []string{"homepage only", "checkout not inspected"},
+	}
+	md := RenderMarkdown(b, "review my shop?", "/sessions/abc")
+	checks := []string{
+		"Mode: review",
+		"Inspection: Firecrawl visual",
+		"Screenshot: saved",
+		"Images analyzed: 4",
+		"Shop type: handmade",
+		"Limitations: homepage only; checkout not inspected",
+	}
+	for _, c := range checks {
+		if !strings.Contains(md, c) {
+			t.Errorf("missing %q\n--- output ---\n%s", c, md)
+		}
+	}
+}
+
+// Reply-mode bundles (no Inspection) render the original shape — no
+// stray Inspection / Screenshot / Limitations lines.
+func TestRenderMarkdownReplyModeOmitsInspectionHeader(t *testing.T) {
+	b := sampleBundle()
+	if b.Inspection != nil {
+		t.Fatal("sampleBundle should not pre-populate Inspection")
+	}
+	md := RenderMarkdown(b, "title", "/x")
+	for _, banned := range []string{"Inspection:", "Screenshot:", "Images analyzed:", "Shop type:", "Limitations:"} {
+		if strings.Contains(md, banned) {
+			t.Errorf("reply-mode rendering should omit %q\n--- output ---\n%s", banned, md)
+		}
+	}
+}
+
 func TestTitleCaseLabel(t *testing.T) {
 	cases := []struct{ in, want string }{
 		// Spec-mandated display forms (SPEC_REPLY_REFINEMENT.md "Output rendering").
 		{"best", "Best"},
 		{"short", "Short"},
-		{"thread-aware", "Thread-Aware"},   // hyphen retained — compound modifier
-		{"personal-story", "Personal Story"}, // space — noun phrase
-		{"question-first", "Question First"}, // space — noun phrase
+		{"thread-aware", "Thread-Aware"},          // hyphen retained — compound modifier
+		{"personal-story", "Personal Story"},      // space — noun phrase
+		{"question-first", "Question First"},      // space — noun phrase
 		{"detailed", "Detailed"},
+		{"structured-review", "Structured-Review"}, // hyphen retained — compound modifier (review-mode variant)
 		// Unknown labels fall back to kebab→title-case-with-hyphens so future
 		// variant names render reasonably without a code change.
 		{"long-multi-part", "Long-Multi-Part"},
