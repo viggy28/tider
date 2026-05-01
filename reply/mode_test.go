@@ -252,6 +252,30 @@ func TestMergeTargetURLsDemotesHallucinatedClassifierURLs(t *testing.T) {
 	}
 }
 
+func TestMergeTargetURLsPreservesFallbackOrderWhenClassifierEmpty(t *testing.T) {
+	// Codex flagged this: previous code alphabetically sorted fallback
+	// URLs when the classifier returned nothing. In review mode the CLI
+	// inspects TargetURLs[0] — so alpha-sort would pick "about" before
+	// "shop" and inspect the wrong page. Body order is itself a signal
+	// (the user mentioned shop first), so preserve insertion order.
+	primary := []string{}
+	fallback := []string{
+		"https://shop.example.com",
+		"https://about.example.com",
+		"https://docs.example.com",
+	}
+	got := mergeTargetURLs(primary, fallback)
+	if len(got) != 3 {
+		t.Fatalf("got %v", got)
+	}
+	if got[0] != "https://shop.example.com" {
+		t.Errorf("body order should be preserved: got[0] = %q (want shop)", got[0])
+	}
+	if got[1] != "https://about.example.com" || got[2] != "https://docs.example.com" {
+		t.Errorf("rest of order changed: %v", got)
+	}
+}
+
 func TestMergeTargetURLsAllHallucinatedFallbackEmpty(t *testing.T) {
 	// Edge case: classifier returned URLs but fallback is empty (the OP
 	// body had no parseable URLs). Without verification info we have to

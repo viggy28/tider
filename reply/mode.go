@@ -17,7 +17,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 	"text/template"
 
@@ -216,14 +215,15 @@ func mergeTargetURLs(primary, fallback []string) []string {
 	// didn't pick), then ungrounded classifier picks last (suspicious,
 	// but kept for visibility — they show up in mode.json so the user
 	// can audit).
+	//
+	// We deliberately do NOT alpha-sort the fallback path even when the
+	// classifier returned nothing. Body-order is itself a signal: a user
+	// who wrote "my shop is X, also see my docs at Y" wants the shop
+	// inspected, not docs sorted to the front. Insertion order from
+	// extractURLs already follows the OP's body — preserve that.
 	out := append([]string{}, grounded...)
 	out = append(out, fromFallback...)
 	out = append(out, ungrounded...)
-
-	// Stable order preserves LLM ranking; sort only when LLM gave nothing.
-	if len(primary) == 0 {
-		sort.Strings(out)
-	}
 	return out
 }
 

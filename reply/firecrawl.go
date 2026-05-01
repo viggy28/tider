@@ -168,12 +168,17 @@ func DownloadScreenshot(ctx context.Context, client *http.Client, screenshotURL,
 	name := fmt.Sprintf("screenshot-%s.png", stamp)
 	dest := filepath.Join(destDir, name)
 
-	out, err := os.Create(dest)
+	// Read up to cap+1 bytes. If we got cap+1 back, the upstream had
+	// more bytes available — bail BEFORE writing so the session never
+	// records a path to a truncated PNG.
+	buf, err := io.ReadAll(io.LimitReader(resp.Body, firecrawlScreenshotMaxBytes+1))
 	if err != nil {
-		return "", fmt.Errorf("download screenshot: create: %w", err)
+		return "", fmt.Errorf("download screenshot: read: %w", err)
 	}
-	defer out.Close()
-	if _, err := io.Copy(out, io.LimitReader(resp.Body, firecrawlScreenshotMaxBytes)); err != nil {
+	if int64(len(buf)) > firecrawlScreenshotMaxBytes {
+		return "", fmt.Errorf("download screenshot: response exceeds %d byte cap (would truncate)", firecrawlScreenshotMaxBytes)
+	}
+	if err := os.WriteFile(dest, buf, 0o644); err != nil {
 		return "", fmt.Errorf("download screenshot: write: %w", err)
 	}
 	return dest, nil

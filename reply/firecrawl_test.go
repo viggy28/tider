@@ -346,6 +346,38 @@ func TestDownloadScreenshotEmptyURLErrors(t *testing.T) {
 	}
 }
 
+func TestDownloadScreenshotErrorsOnOversizedResponse(t *testing.T) {
+	// Codex flagged this: previous code used io.LimitReader and silently
+	// truncated oversized responses, leaving a corrupt PNG on disk. New
+	// behavior: detect oversized response (read cap+1 bytes, check) and
+	// fail BEFORE writing the file.
+	const oversize = firecrawlScreenshotMaxBytes + 1024 // 1KB over the cap
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("\x89PNG\r\n\x1a\n"))
+		// Pad to oversize.
+		junk := make([]byte, oversize-8)
+		_, _ = w.Write(junk)
+	}))
+	defer srv.Close()
+
+	dir := filepath.Join(t.TempDir(), "screenshots")
+	_, err := DownloadScreenshot(context.Background(), srv.Client(), srv.URL+"/big.png", dir)
+	if err == nil {
+		t.Fatal("expected error for oversized response")
+	}
+	if !strings.Contains(err.Error(), "exceeds") || !strings.Contains(err.Error(), "cap") {
+		t.Errorf("error should mention cap exceeded, got: %v", err)
+	}
+	// No file should have been written.
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".png") {
+			t.Errorf("oversized response left a partial PNG on disk: %s", e.Name())
+		}
+	}
+}
+
 func TestDownloadScreenshotNon200Errors(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
