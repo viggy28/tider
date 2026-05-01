@@ -213,17 +213,25 @@ func mergeTargetURLs(primary, fallback []string) []string {
 	// Order: grounded classifier picks first (LLM ranked them, and they
 	// exist in the OP), then any extra fallback URLs (regex found, LLM
 	// didn't pick), then ungrounded classifier picks last (suspicious,
-	// but kept for visibility — they show up in mode.json so the user
-	// can audit).
+	// kept only when we have at least some grounding signal so the user
+	// can audit them in mode.json).
 	//
-	// We deliberately do NOT alpha-sort the fallback path even when the
-	// classifier returned nothing. Body-order is itself a signal: a user
-	// who wrote "my shop is X, also see my docs at Y" wants the shop
-	// inspected, not docs sorted to the front. Insertion order from
-	// extractURLs already follows the OP's body — preserve that.
+	// CRITICAL: when fallback is empty (OP has no parseable URLs), we
+	// drop ungrounded entries entirely. Returning hallucinated URLs in
+	// that case would let the CLI's `len(TargetURLs) > 0` check pass
+	// and route review mode at an invented URL — violating the spec's
+	// "no fake fallbacks" rule. Empty result here is correct: the CLI
+	// then surfaces the spec-mandated "no shop/site URL was found in
+	// the original post" failure.
+	//
+	// Body-order is preserved (no alpha sort) since it's itself a
+	// signal: a user who wrote "my shop is X, also see my docs at Y"
+	// wants the shop inspected, not docs sorted to the front.
 	out := append([]string{}, grounded...)
 	out = append(out, fromFallback...)
-	out = append(out, ungrounded...)
+	if len(fallback) > 0 {
+		out = append(out, ungrounded...)
+	}
 	return out
 }
 

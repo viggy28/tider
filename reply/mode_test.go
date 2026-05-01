@@ -276,16 +276,39 @@ func TestMergeTargetURLsPreservesFallbackOrderWhenClassifierEmpty(t *testing.T) 
 	}
 }
 
-func TestMergeTargetURLsAllHallucinatedFallbackEmpty(t *testing.T) {
-	// Edge case: classifier returned URLs but fallback is empty (the OP
-	// body had no parseable URLs). Without verification info we have to
-	// trust the classifier — preserve original order.
+func TestMergeTargetURLsDropsAllHallucinatedWhenFallbackEmpty(t *testing.T) {
+	// When OP has no extractable URLs (fallback empty) and the classifier
+	// returns URLs anyway, those URLs are by definition hallucinated —
+	// the classifier prompt forbids inventing. We must NOT include them,
+	// because the CLI's `len(TargetURLs) > 0` check would then pass and
+	// route review-mode at a fabricated URL instead of failing per spec
+	// ("no shop/site URL was found in the original post").
+	//
+	// Codex round-3 caught this: my round-1 fix kept ungrounded URLs
+	// "for visibility," but visibility doesn't help when the consumer
+	// can't distinguish grounded from ungrounded entries.
 	primary := []string{"https://a.example.com", "https://b.example.com"}
 	got := mergeTargetURLs(primary, nil)
+	if len(got) != 0 {
+		t.Errorf("expected empty result when fallback is empty, got %v", got)
+	}
+}
+
+func TestMergeTargetURLsKeepsUngroundedWhenFallbackNonEmpty(t *testing.T) {
+	// When fallback has at least one URL, ungrounded classifier picks
+	// are kept (demoted to last) so the user can audit them in
+	// mode.json. The grounded URL still ranks first → CLI inspects a
+	// real target by default.
+	primary := []string{"https://invented.example.com"} // not in fallback
+	fallback := []string{"https://real.example.com"}
+	got := mergeTargetURLs(primary, fallback)
 	if len(got) != 2 {
 		t.Fatalf("got %v", got)
 	}
-	if got[0] != "https://a.example.com" || got[1] != "https://b.example.com" {
-		t.Errorf("classifier order should be preserved when fallback is empty: %v", got)
+	if got[0] != "https://real.example.com" {
+		t.Errorf("real URL should rank first when present: %v", got)
+	}
+	if got[1] != "https://invented.example.com" {
+		t.Errorf("ungrounded URL should still appear when fallback is non-empty: %v", got)
 	}
 }

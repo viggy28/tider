@@ -109,7 +109,9 @@ API key for the chosen provider must be set in the environment
 		}
 
 		// 7. Mode classifier — uses the cheaper model from tasks.reply_mode.
-		modeProvider, modeModel, modeMaxTokens := cfg.ForTask("reply_mode")
+		//    --provider propagates here so `--provider=anthropic` doesn't
+		//    silently still require OPENAI_API_KEY for the classifier call.
+		modeProvider, modeModel, modeMaxTokens := resolveProviderModel(cfg, "reply_mode", replyProvider, "", 0)
 		modeP, err := llm.New(llm.Config{Provider: modeProvider, Model: modeModel})
 		if err != nil {
 			return fmt.Errorf("mode classifier provider: %w", err)
@@ -123,16 +125,7 @@ API key for the chosen provider must be set in the environment
 		}
 
 		// 8. Drafter provider — needed for both reply and review pipelines.
-		draftProvider, draftModel, draftMaxTokens := cfg.ForTask("reply")
-		if replyProvider != "" {
-			draftProvider = replyProvider
-		}
-		if replyModel != "" {
-			draftModel = replyModel
-		}
-		if replyMaxTokens > 0 {
-			draftMaxTokens = replyMaxTokens
-		}
+		draftProvider, draftModel, draftMaxTokens := resolveProviderModel(cfg, "reply", replyProvider, replyModel, replyMaxTokens)
 		draftP, err := llm.New(llm.Config{Provider: draftProvider, Model: draftModel})
 		if err != nil {
 			return fmt.Errorf("drafter provider: %w", err)
@@ -206,7 +199,9 @@ API key for the chosen provider must be set in the environment
 
 			// Build review notes — uses the cheaper classifier model
 			// since this is structured-summary work, not creative writing.
-			notesProvider, notesModel, notesMaxTokens := cfg.ForTask("reply_mode")
+			// --provider propagates so the user's provider choice covers
+			// every call in the pipeline.
+			notesProvider, notesModel, notesMaxTokens := resolveProviderModel(cfg, "reply_mode", replyProvider, "", 0)
 			notesP, err := llm.New(llm.Config{Provider: notesProvider, Model: notesModel})
 			if err != nil {
 				return fmt.Errorf("review-notes provider: %w", err)
@@ -267,11 +262,52 @@ API key for the chosen provider must be set in the environment
 	},
 }
 
+// resolveProviderModel produces the (provider, model, maxTokens) triple
+// for a given task, honoring CLI overrides.
+//
+// Plain ForTask handles per-task config defaults but doesn't know about
+// the CLI's --provider flag — so a task whose default model belongs to
+// the other provider (e.g. tasks.reply_mode defaults to gpt-4o-mini)
+// would otherwise get sent to the wrong provider when the user passes
+// --provider=anthropic. This helper swaps in the per-provider default
+// model whenever --provider changes the provider, then layers --model
+// and --max-tokens on top.
+//
+// modelOverride / maxTokensOverride may be empty/zero — only --provider
+// is honored across all three reply pipeline calls (mode, drafter,
+// review-notes); the drafter call is the only one that exposes --model
+// and --max-tokens to the user.
+func resolveProviderModel(cfg *config.Config, task, providerOverride, modelOverride string, maxTokensOverride int) (provider, model string, maxTokens int) {
+	provider, model, maxTokens = cfg.ForTask(task)
+	if providerOverride != "" && providerOverride != provider {
+		provider = providerOverride
+		// Provider changed — task's default model is for the wrong
+		// provider. Fall back to the per-provider default in config.
+		switch providerOverride {
+		case "anthropic":
+			if cfg.LLM.AnthropicModel != "" {
+				model = cfg.LLM.AnthropicModel
+			}
+		case "openai":
+			if cfg.LLM.OpenAIModel != "" {
+				model = cfg.LLM.OpenAIModel
+			}
+		}
+	}
+	if modelOverride != "" {
+		model = modelOverride
+	}
+	if maxTokensOverride > 0 {
+		maxTokens = maxTokensOverride
+	}
+	return
+}
+
 func init() {
 	replyCmd.Flags().StringVar(&replyURL, "url", "", "URL of the Reddit thread to draft a reply for")
 	replyCmd.Flags().StringSliceVar(&replyContexts, "context", nil, "context-bank id or file path (repeatable)")
 	replyCmd.Flags().StringVar(&replyRender, "render", "", "output format: json | markdown (default: markdown in TTY, json when piped)")
-	replyCmd.Flags().StringVar(&replyProvider, "provider", "", "LLM provider for the drafter call (default from config tasks.reply)")
+	replyCmd.Flags().StringVar(&replyProvider, "provider", "", "LLM provider for every call in this command (default from config tasks.<task>)")
 	replyCmd.Flags().StringVar(&replyModel, "model", "", "LLM model for the drafter call (default from config tasks.reply)")
 	replyCmd.Flags().IntVar(&replyMaxTokens, "max-tokens", 0, "drafter completion budget (default from config tasks.reply)")
 }
