@@ -198,12 +198,13 @@ func TestInspectSendsUserAgent(t *testing.T) {
 	}
 }
 
-// When FIRECRAWL_API_KEY is set but the Firecrawl call fails (transient
-// outage, bad key, quota), Inspect should fall back to InspectHTML so
-// the rest of the reply pipeline still works. The user gets a stderr
-// warning but the inspection itself succeeds with Source=html.
-func TestInspectFirecrawlErrorFallsBackToHTML(t *testing.T) {
-	// Firecrawl server: 500 on every request.
+// SPEC_REPLY.md mandates "if inspection fails → fail clearly, preserve
+// session" — Inspect must NOT fall back from Firecrawl to HTML when the
+// user opted in to Firecrawl by setting FIRECRAWL_API_KEY. Silently
+// downgrading would mask a backend failure under output that looks
+// Firecrawl-shaped to the caller but is actually missing markdown,
+// screenshot, and image fields.
+func TestInspectFirecrawlErrorDoesNotFallBackToHTML(t *testing.T) {
 	fcSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}))
@@ -213,45 +214,23 @@ func TestInspectFirecrawlErrorFallsBackToHTML(t *testing.T) {
 	defer func() { firecrawlAPIBase = prev }()
 	t.Setenv("FIRECRAWL_API_KEY", "test-key")
 
-	// Target HTML server: serves a real page.
+	// HTML server we expect to NEVER be reached on Firecrawl failure.
+	htmlReached := false
 	htmlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
+		htmlReached = true
 		_, _ = w.Write([]byte(sampleHTML))
 	}))
 	defer htmlSrv.Close()
 
-	insp, err := Inspect(context.Background(), &http.Client{}, htmlSrv.URL)
-	if err != nil {
-		t.Fatalf("expected fallback to succeed, got error: %v", err)
-	}
-	if insp.Source != "html" {
-		t.Errorf("expected Source=html after Firecrawl failure, got %q", insp.Source)
-	}
-	if insp.Title == "" {
-		t.Error("expected HTML inspection to populate Title from sampleHTML")
-	}
-}
-
-// If the user cancels via context, Inspect should propagate the
-// Firecrawl error rather than fall back — the operator wants out, not a
-// degraded retry that doubles the latency hit.
-func TestInspectContextCancelDoesNotFallBack(t *testing.T) {
-	fcSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Honor cancellation: block until cancel.
-		<-r.Context().Done()
-	}))
-	defer fcSrv.Close()
-	prev := firecrawlAPIBase
-	firecrawlAPIBase = fcSrv.URL
-	defer func() { firecrawlAPIBase = prev }()
-	t.Setenv("FIRECRAWL_API_KEY", "test-key")
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // cancel immediately
-
-	_, err := Inspect(ctx, &http.Client{}, "https://example.invalid/")
+	_, err := Inspect(context.Background(), &http.Client{}, htmlSrv.URL)
 	if err == nil {
-		t.Fatal("expected error when context is canceled")
+		t.Fatal("expected Firecrawl failure to propagate, got nil error")
+	}
+	if !strings.Contains(err.Error(), "firecrawl") {
+		t.Errorf("expected error to identify Firecrawl as the source, got: %v", err)
+	}
+	if htmlReached {
+		t.Error("HTML inspector was reached after Firecrawl failure — fallback violates spec")
 	}
 }
 
