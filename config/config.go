@@ -77,6 +77,12 @@ func Default() *Config {
 				"regen":      {MaxTokens: 4096},
 				"reply_mode": {Model: "gpt-4o-mini", MaxTokens: 2048},
 				"reply":      {MaxTokens: 8192},
+				// review_visual is the screenshot+images analyzer for review
+				// mode (SPEC_REVIEW_VISUAL_FIRECRAWL.md). MUST be a vision-
+				// capable model — Anthropic vision is deferred to v1.5, so
+				// this is OpenAI-only in practice. llm.SupportsVision gates
+				// the choice at call time.
+				"review_visual": {Provider: "openai", Model: "gpt-4o", MaxTokens: 4096},
 			},
 		},
 		Defaults: DefaultsConfig{

@@ -308,14 +308,16 @@ type ReplyDraft struct {
 
 // ReplyBundle holds the variants a single reply-drafting call produced
 // plus the pick the LLM recommends. Same shape regardless of mode
-// (reply vs review).
+// (reply vs review). Inspection is populated only in review mode and
+// drives the inspection-depth header in the rendered output.
 type ReplyBundle struct {
-	ThreadURL string       `json:"thread_url"`
-	Subreddit string       `json:"subreddit"`
-	Mode      ReplyMode    `json:"mode"`
-	Drafts    []ReplyDraft `json:"drafts"`
-	PickID    string       `json:"pick_id,omitempty"`
-	Generated time.Time    `json:"generated"`
+	ThreadURL  string             `json:"thread_url"`
+	Subreddit  string             `json:"subreddit"`
+	Mode       ReplyMode          `json:"mode"`
+	Drafts     []ReplyDraft       `json:"drafts"`
+	PickID     string             `json:"pick_id,omitempty"`
+	Inspection *InspectionSummary `json:"inspection,omitempty"`
+	Generated  time.Time          `json:"generated"`
 }
 
 // Inspection is the structured signal we extract from a review target's
@@ -368,4 +370,70 @@ type ReviewNotes struct {
 	Suggestions   []string  `json:"suggestions,omitempty"`
 	OpenQuestions []string  `json:"open_questions,omitempty"`
 	Generated     time.Time `json:"generated"`
+}
+
+// VisualReviewNotes is the LLM's analysis of the captured screenshot
+// (and optionally selected product/page images). Sits alongside
+// ReviewNotes — text and visual observations are kept in separate
+// artifacts so the review drafter can quote each one specifically and
+// the user can audit which findings came from where.
+//
+// ShopType is the analyzer's classification of the inspected page; it
+// gates the KovaSignals slot. KovaSignals is populated only when
+// ShopType is "handmade" or "boutique" (where the Kova thesis applies).
+// For B2B / SaaS / dropship / services / portfolio / unclear pages,
+// KovaSignals stays empty so the drafter doesn't recommend "show your
+// maker process" to an industrial supplier.
+type VisualReviewNotes struct {
+	TargetURL    string              `json:"target_url"`
+	ShopType     string              `json:"shop_type"` // handmade|boutique|dropship|b2b_industrial|saas|services|portfolio|unclear
+	Summary      string              `json:"summary"`
+	Observations []VisualObservation `json:"observations"`
+	KovaSignals  []string            `json:"kova_signals,omitempty"`
+	Questions    []string            `json:"questions,omitempty"`
+	Limitations  []string            `json:"limitations,omitempty"`
+	Generated    time.Time           `json:"generated"`
+}
+
+// VisualObservation is one finding from the visual analyzer. Each
+// observation must cite visible evidence so the drafter can quote it
+// directly without re-inspecting the page.
+type VisualObservation struct {
+	Area           string `json:"area"` // above_fold|product_images|trust|navigation|pricing_cta|mobile_risk|brand|generic_risk
+	Finding        string `json:"finding"`
+	Evidence       string `json:"evidence"`
+	Severity       string `json:"severity"` // high|medium|low
+	Recommendation string `json:"recommendation"`
+}
+
+// VisualInputRecord is what gets persisted to visual-input.json — the
+// exact materials sent to the visual analyzer. Saved alongside
+// visual-notes.json so a session can be replayed without re-fetching.
+type VisualInputRecord struct {
+	TargetURL           string                `json:"target_url"`
+	ScreenshotPath      string                `json:"screenshot_path"`
+	ScreenshotSourceURL string                `json:"screenshot_source_url,omitempty"`
+	ImageRefs           []VisualImageRef      `json:"image_refs,omitempty"`
+	PageTitle           string                `json:"page_title,omitempty"`
+	ContextIDs          []string              `json:"context_ids,omitempty"`
+	Generated           time.Time             `json:"generated"`
+}
+
+type VisualImageRef struct {
+	URL       string `json:"url"`
+	LocalPath string `json:"local_path,omitempty"`
+	Alt       string `json:"alt,omitempty"`
+	Reason    string `json:"reason,omitempty"`
+}
+
+// InspectionSummary is a small render-time payload describing what was
+// inspected for a review. Populated only in review mode; reply mode
+// ignores it. Surfaces in the rendered output so users can see the
+// inspection depth before reading the draft.
+type InspectionSummary struct {
+	Source         string   `json:"source"`              // "firecrawl" — HTML inspection isn't valid for review-mode rendering
+	ScreenshotPath string   `json:"screenshot_path,omitempty"`
+	ImagesAnalyzed int      `json:"images_analyzed"`
+	ShopType       string   `json:"shop_type,omitempty"`
+	Limitations    []string `json:"limitations,omitempty"`
 }
