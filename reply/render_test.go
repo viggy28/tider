@@ -16,7 +16,8 @@ func sampleBundle() *types.ReplyBundle {
 		Drafts: []types.ReplyDraft{
 			{ID: "best", Label: "best", Text: "Best reply text here.", Reasoning: "concise + fits sub"},
 			{ID: "short", Label: "short", Text: "Short text.", Reasoning: "shortest viable"},
-			{ID: "detailed", Label: "detailed", Text: "Detailed text with more depth.", Reasoning: "for thorough threads"},
+			{ID: "thread-aware", Label: "thread-aware", Text: "Engages the batching pushback.", Reasoning: "top comment counterpoint"},
+			{ID: "personal-story", Label: "personal-story", Text: "Story-shaped reply.", Reasoning: "uses one-person handmade shop story from personal.md"},
 			{ID: "question-first", Label: "question-first", Text: "What's your stack?", Reasoning: "need more info"},
 		},
 		PickID:    "best",
@@ -48,8 +49,9 @@ func TestRenderMarkdownBestPickLeads(t *testing.T) {
 		"### Short",
 		"*shortest viable*",                    // alt reasoning as italic
 		"Short text.",
-		"### Detailed",
-		"### Question-First",                   // hyphenated label title-cased
+		"### Thread-Aware",                     // compound modifier — hyphen retained per spec
+		"### Personal Story",                   // noun phrase — space, not hyphen, per spec
+		"### Question First",                   // noun phrase — space, not hyphen, per spec
 		"What's your stack?",
 	}
 	for _, c := range checks {
@@ -88,7 +90,7 @@ func TestRenderMarkdownPickIDNotInDrafts(t *testing.T) {
 	if !strings.Contains(md, "## Alternatives") {
 		t.Error("Alternatives should still render")
 	}
-	for _, want := range []string{"### Best", "### Short", "### Detailed", "### Question-First"} {
+	for _, want := range []string{"### Best", "### Short", "### Thread-Aware", "### Personal Story", "### Question First"} {
 		if !strings.Contains(md, want) {
 			t.Errorf("alternative %q should still render", want)
 		}
@@ -103,9 +105,15 @@ func TestRenderMarkdownNilBundle(t *testing.T) {
 
 func TestTitleCaseLabel(t *testing.T) {
 	cases := []struct{ in, want string }{
+		// Spec-mandated display forms (SPEC_REPLY_REFINEMENT.md "Output rendering").
 		{"best", "Best"},
 		{"short", "Short"},
-		{"question-first", "Question-First"},
+		{"thread-aware", "Thread-Aware"},   // hyphen retained — compound modifier
+		{"personal-story", "Personal Story"}, // space — noun phrase
+		{"question-first", "Question First"}, // space — noun phrase
+		{"detailed", "Detailed"},
+		// Unknown labels fall back to kebab→title-case-with-hyphens so future
+		// variant names render reasonably without a code change.
 		{"long-multi-part", "Long-Multi-Part"},
 		{"", ""},
 		{"a", "A"},

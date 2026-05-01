@@ -103,6 +103,7 @@ func renderReplyPrompt(input *DraftInput) (string, error) {
 	var buf bytes.Buffer
 	err := replyTmpl.Execute(&buf, struct {
 		Subreddit     string
+		Flair         string
 		Title         string
 		Body          string
 		Comments      []types.Comment
@@ -110,6 +111,7 @@ func renderReplyPrompt(input *DraftInput) (string, error) {
 		Contexts      []types.LoadedReplyContext
 	}{
 		Subreddit:     input.Thread.Subreddit,
+		Flair:         input.Thread.Flair,
 		Title:         input.Thread.Title,
 		Body:          input.Thread.Body,
 		Comments:      input.Thread.Comments,
