@@ -49,9 +49,9 @@ func TestRenderMarkdownBestPickLeads(t *testing.T) {
 		"### Short",
 		"*shortest viable*",                    // alt reasoning as italic
 		"Short text.",
-		"### Thread-Aware",                     // new variant, hyphenated label title-cased
-		"### Personal-Story",                   // new variant, hyphenated label title-cased
-		"### Question-First",                   // hyphenated label title-cased
+		"### Thread-Aware",                     // compound modifier — hyphen retained per spec
+		"### Personal Story",                   // noun phrase — space, not hyphen, per spec
+		"### Question First",                   // noun phrase — space, not hyphen, per spec
 		"What's your stack?",
 	}
 	for _, c := range checks {
@@ -90,7 +90,7 @@ func TestRenderMarkdownPickIDNotInDrafts(t *testing.T) {
 	if !strings.Contains(md, "## Alternatives") {
 		t.Error("Alternatives should still render")
 	}
-	for _, want := range []string{"### Best", "### Short", "### Thread-Aware", "### Personal-Story", "### Question-First"} {
+	for _, want := range []string{"### Best", "### Short", "### Thread-Aware", "### Personal Story", "### Question First"} {
 		if !strings.Contains(md, want) {
 			t.Errorf("alternative %q should still render", want)
 		}
@@ -105,11 +105,15 @@ func TestRenderMarkdownNilBundle(t *testing.T) {
 
 func TestTitleCaseLabel(t *testing.T) {
 	cases := []struct{ in, want string }{
+		// Spec-mandated display forms (SPEC_REPLY_REFINEMENT.md "Output rendering").
 		{"best", "Best"},
 		{"short", "Short"},
-		{"thread-aware", "Thread-Aware"},
-		{"personal-story", "Personal-Story"},
-		{"question-first", "Question-First"},
+		{"thread-aware", "Thread-Aware"},   // hyphen retained — compound modifier
+		{"personal-story", "Personal Story"}, // space — noun phrase
+		{"question-first", "Question First"}, // space — noun phrase
+		{"detailed", "Detailed"},
+		// Unknown labels fall back to kebab→title-case-with-hyphens so future
+		// variant names render reasonably without a code change.
 		{"long-multi-part", "Long-Multi-Part"},
 		{"", ""},
 		{"a", "A"},

@@ -73,12 +73,30 @@ func alternatives(drafts []types.ReplyDraft, pickID string) []types.ReplyDraft {
 	return out
 }
 
-// titleCaseLabel turns "question-first" → "Question-First", "short" →
-// "Short", etc. Cobra-style title casing for short tokens. Avoids
-// strings.Title (deprecated) and the cases package dep.
+// displayLabel maps known variant ids to their spec-mandated display
+// form (SPEC_REPLY_REFINEMENT.md, "Output rendering"). Hyphen retention
+// is intentional and per-label: "thread-aware" reads as a compound
+// modifier and keeps its hyphen; "personal-story" and "question-first"
+// read as noun phrases and use spaces.
+var displayLabel = map[string]string{
+	"best":           "Best",
+	"short":          "Short",
+	"thread-aware":   "Thread-Aware",
+	"personal-story": "Personal Story",
+	"question-first": "Question First",
+	"detailed":       "Detailed",
+}
+
+// titleCaseLabel returns the display form of a draft label. Known labels
+// from the spec use the explicit map above; unknown labels fall back to
+// kebab-to-title-case-with-hyphens so future variant names render
+// reasonably without a code change.
 func titleCaseLabel(s string) string {
 	if s == "" {
 		return ""
+	}
+	if d, ok := displayLabel[s]; ok {
+		return d
 	}
 	parts := strings.Split(s, "-")
 	for i, p := range parts {
