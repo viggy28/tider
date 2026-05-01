@@ -1,6 +1,6 @@
 # Spec: flat command structure + `tider reply`
 
-Living document. Updated as implementation progresses.
+**Status: implemented.** This document started as a forward spec and was updated as implementation landed. See the **Decisions log** at the bottom for changes made during the work.
 
 ## Goal
 
@@ -58,15 +58,20 @@ tider reply --url=<reddit-thread-url> --context=kova [--context=...] [--render=.
 
 Fetches the thread, detects mode (reply or review) from OP only, loads contexts, drafts reply variants, persists a session.
 
-Flags:
+Flags (as implemented):
 
 - `--url` — required
 - `--context` — repeatable; resolved via `contextbank.Load` (id from bank, or direct file path)
 - `--render=json|markdown` — TTY-aware default (markdown in TTY, json when piped)
-- `--providers` — config-backed default
-- `--openai-model`, `--anthropic-model` — config-backed defaults
+- `--provider` — singular; overrides drafter provider (default from config `tasks.reply`)
+- `--model` — singular; overrides drafter model (default from config `tasks.reply`)
 - `--max-tokens` — config-backed default
-- `--refresh` — bypass any thread fetch cache (later, may not be needed for v1)
+
+Note: an earlier draft of this spec listed `--providers` (plural) plus `--openai-model` / `--anthropic-model` per the post-command pattern. Reply uses a single LLM call; singular flags reflect that accurately. See decisions log.
+
+Not implemented in v1 (deferred):
+- `--refresh` — bypass thread fetch cache. Threads aren't cached today.
+- `--session=<id>` — resume/re-render from saved session (mentioned in original plan as a later-pass feature).
 
 ---
 
@@ -208,78 +213,118 @@ Anything else → clear parse error.
 For reply context (not mode detection):
 
 - Top 20 comments by score, any depth (flatten the tree)
-- Hard cap at 50 to bound prompt size
 - Stored in `thread.json` as a flat list with `parent_id` preserved
+
+The earlier "hard cap at 50" line was redundant — once we sort by score and take the top 20, additional caps don't add value. Implementation walks the full comment tree, sorts, takes top 20.
 
 ---
 
 ## Data shapes
 
+Types live in `internal/types/` (matching the existing pattern: `Brief`, `Research`, `Snapshot`, etc. all live there for cross-package use). Names are prefixed with `Reply` to avoid collisions in the shared namespace.
+
 ```go
-package reply
+package types
 
 import "time"
 
 type Thread struct {
-    URL         string
-    Subreddit   string
-    PostID      string
-    Title       string
-    Body        string
-    Author      string
-    Flair       string
-    OutboundURL string
-    Comments    []Comment
-    FetchedAt   time.Time
+    URL         string    `json:"url"`
+    Subreddit   string    `json:"subreddit"`
+    PostID      string    `json:"post_id"`
+    Title       string    `json:"title"`
+    Body        string    `json:"body"`
+    Author      string    `json:"author"`
+    Flair       string    `json:"flair,omitempty"`
+    OutboundURL string    `json:"outbound_url,omitempty"`
+    Comments    []Comment `json:"comments"`
+    FetchedAt   time.Time `json:"fetched_at"`
 }
 
 type Comment struct {
-    ID         string
-    ParentID   string
-    Author     string
-    Body       string
-    Score      int
-    CreatedUTC float64
+    ID         string  `json:"id"`
+    ParentID   string  `json:"parent_id,omitempty"`
+    Author     string  `json:"author"`
+    Body       string  `json:"body"`
+    Score      int     `json:"score"`
+    CreatedUTC float64 `json:"created_utc"`
 }
 
-type Mode string
+type ReplyMode string
 
 const (
-    ModeReply  Mode = "reply"
-    ModeReview Mode = "review"
+    ReplyModeReply  ReplyMode = "reply"
+    ReplyModeReview ReplyMode = "review"
 )
 
-type ModeResult struct {
-    Mode       Mode
-    Reason     string
-    TargetURLs []string
+type ReplyModeResult struct {
+    Mode       ReplyMode `json:"mode"`
+    Reason     string    `json:"reason,omitempty"`
+    TargetURLs []string  `json:"target_urls,omitempty"`
 }
 
-type LoadedContext struct {
-    ID     string  // empty if loaded by path
-    Source string  // "bank" | "path"
-    Path   string
-    Body   string  // verbatim file contents
+type LoadedReplyContext struct {
+    ID     string `json:"id,omitempty"` // empty if loaded by path
+    Source string `json:"source"`        // "bank" | "path"
+    Path   string `json:"path"`
+    Body   string `json:"body"` // verbatim file contents
 }
 
-type Draft struct {
-    ID        string
-    Label     string  // "best" | "short" | "detailed" | "question-first"
-    Text      string
-    Reasoning string
+type ReplyDraft struct {
+    ID        string `json:"id"`
+    Label     string `json:"label"` // "best" | "short" | "detailed" | "question-first"
+    Text      string `json:"text"`
+    Reasoning string `json:"reasoning,omitempty"`
 }
 
-type Bundle struct {
-    ThreadURL   string
-    Subreddit   string
-    Mode        Mode
-    Drafts      []Draft
-    PickID      string
-    Generated   time.Time
+type ReplyBundle struct {
+    ThreadURL string       `json:"thread_url"`
+    Subreddit string       `json:"subreddit"`
+    Mode      ReplyMode    `json:"mode"`
+    Drafts    []ReplyDraft `json:"drafts"`
+    PickID    string       `json:"pick_id,omitempty"`
+    Generated time.Time    `json:"generated"`
+}
+
+// Review-mode-only:
+
+type Inspection struct {
+    URL             string    `json:"url"`
+    Status          int       `json:"status"`
+    Title           string    `json:"title,omitempty"`
+    MetaDescription string    `json:"meta_description,omitempty"`
+    OGTitle         string    `json:"og_title,omitempty"`
+    OGDescription   string    `json:"og_description,omitempty"`
+    Headings        []Heading `json:"headings,omitempty"`
+    Snippets        []string  `json:"snippets,omitempty"`
+    FetchedAt       time.Time `json:"fetched_at"`
+}
+
+type Heading struct {
+    Level int    `json:"level"`
+    Text  string `json:"text"`
+}
+
+type ReviewNotes struct {
+    TargetURL     string    `json:"target_url"`
+    Strengths     []string  `json:"strengths,omitempty"`
+    Weaknesses    []string  `json:"weaknesses,omitempty"`
+    Suggestions   []string  `json:"suggestions,omitempty"`
+    OpenQuestions []string  `json:"open_questions,omitempty"`
+    Generated     time.Time `json:"generated"`
 }
 ```
 
-`thread.json` ↔ `Thread`. `mode.json` ↔ `ModeResult`. `drafts.json` ↔ `Bundle`. `contexts.json` ↔ `[]LoadedContext`. `target.json`, `inspection.json`, `review-notes.json` are review-mode-only.
+File ↔ type mapping:
+- `thread.json` ↔ `types.Thread`
+- `mode.json` ↔ `types.ReplyModeResult`
+- `contexts.json` ↔ `[]types.LoadedReplyContext`
+- `draft-input.json` ↔ `reply.DraftInput` (reply mode) or `reply.ReviewDraftInput` (review mode)
+- `drafts.json` ↔ `types.ReplyBundle`
+- `output.md` ↔ rendered markdown
+- `target.json` (review only) ↔ `{url, alternatives, reason}` map
+- `inspection.json` (review only) ↔ `types.Inspection`
+- `review-notes.json` (review only) ↔ `types.ReviewNotes`
 
 ---
 
@@ -329,64 +374,24 @@ TTY-aware: ANSI in terminal, raw markdown when piped. JSON render emits `Bundle`
 
 ---
 
-## Patches / commit plan
+## Commit plan (as shipped)
 
-Implementation lands in this order on `feat-reply-and-rename`:
+The original spec called for 10 commits in a strict order. Implementation collapsed CLI wiring (planned commit 9) into commit 7 to make reply mode end-to-end testable mid-branch. Final order on `feat-reply-and-rename`:
 
-**Commit 1: spec**
-- `SPEC_REPLY.md` (this file).
+| # | Commit | Notes |
+|---|---|---|
+| 1 | `spec: tider draft → tider post + add tider reply` | This document. |
+| 2 | `rename: tider draft → tider post` | Pure rename. No backward-compat alias. |
+| 3 | `reddit: thread fetcher + URL parser` | All 5 URL forms + bonus `new.reddit.com`; thread fetch flattens comments by score. |
+| 4 | `reply: LLM-driven mode classifier (reply vs review)` | OP-only inputs; classifier returns `{mode, reason, target_urls}`. URL extraction de-duped against body. |
+| 5 | `reply: session manager` | `~/.tider/sessions/replies/<slug>/`; atomic JSON writes via temp+rename. |
+| 6 | `reply: context loading with snapshot bodies` | Wraps `contextbank.Load`. |
+| 7 | `reply: drafter + render + CLI (reply mode end-to-end)` | Combined commits 7+9 from original plan. Reply mode usable. Review mode errors with "not yet implemented" + saves target.json. |
+| 8 | `reply: write draft-input.json + match spec render header` | Spec-alignment fixes from the audit pass. |
+| 9 | `reply: review-mode inspection + notes + drafter` | This commit. `golang.org/x/net/html` for HTML parsing, two new prompt templates, full review pipeline wired. |
+| 10 | `spec: close-out — match spec to what shipped` | Updates spec to reflect type location, flag names, commit reordering, dep addition. |
 
-**Commit 2: rename `tider draft` → `tider post`**
-- Move `cmd/tider/draft.go` → `cmd/tider/post.go`.
-- Rename `draftCmd` → `postCmd`, all `draft*` flag vars → `post*`.
-- Update `cmd/tider/main.go` registration.
-- Update `regen` cross-references and any other internal usage.
-- Update `Claude.md`, `README.md`, help text.
-- No backward-compatible alias — `tider draft` returns cobra's "unknown command" error.
-
-**Commit 3: Reddit thread fetcher + URL parser**
-- `internal/reddit/url.go` — parse all five supported URL forms; expose `ParseThreadURL(raw) (sub, postID string, err error)`.
-- `internal/reddit/thread.go` — `FetchThread(ctx, sub, postID, opts) (*Thread, error)`. Hits `/r/<sub>/comments/<post_id>.json`. Selects top 20 comments by score across the tree, capped at 50.
-- Tests with httptest fixtures.
-
-**Commit 4: mode detector**
-- `prompts/reply_mode.tmpl`.
-- `reply/mode.go` — `Detect(ctx, llm, thread) (*ModeResult, error)`. JSON-mode call, parses classifier output, also runs a fallback URL-extraction pass against OP body.
-- Tests with fake LLM provider.
-
-**Commit 5: session manager**
-- `reply/session.go` — `New(root, thread) (*Session, error)`, `Path() string`, `WriteJSON(name string, v any) error`, `WriteMarkdown(name, body string) error`.
-- Slug from date + subreddit + post id.
-- Tests for path generation, atomic write, missing-dir handling.
-
-**Commit 6: context loading + snapshot**
-- `reply/contexts.go` — wraps `contextbank.Load` for repeatable `--context` flags. Returns `[]LoadedContext`. Snapshots into session via `WriteJSON("contexts.json", ...)`.
-- Tests for id+path mixing, missing entries, session snapshot.
-
-**Commit 7: reply drafter (reply mode end-to-end)**
-- `prompts/reply.tmpl`.
-- `reply/drafter.go` — `Generate(ctx, llm, input) (*Bundle, error)`. Single LLM call, returns Bundle with 3-4 labeled variants.
-- `reply/render.go` — markdown render of Bundle.
-- Tests with fake provider.
-
-**Commit 8: review-mode inspection + drafter**
-- `reply/inspect.go` — `Inspect(ctx, http, target) (*Inspection, error)`. Fetches HTML, extracts title, meta description, headings (h1/h2/h3), visible text snippets via `golang.org/x/net/html` or simple regex. Saves `inspection.json`.
-- `prompts/review_notes.tmpl` — turns inspection into structured review notes.
-- `reply/notes.go` — `BuildNotes(ctx, llm, inspection) (*ReviewNotes, error)`.
-- `prompts/review.tmpl` — review-mode draft prompt grounded in notes.
-- Tests with httptest target sites + fake LLM.
-
-**Commit 9: CLI wiring**
-- `cmd/tider/reply.go` — full command. Loads config, parses URL, prints session path early, runs detector, persists artifacts incrementally, branches on mode.
-- Register in `cmd/tider/main.go`.
-- Help text.
-
-**Commit 10: spec close-out**
-- Update `SPEC_REPLY.md` with any decisions changed during implementation. Mark "implemented" sections.
-
-Estimated total: ~1500 LOC implementation + ~600 LOC tests. Day of focused work.
-
-If this turns out to need to ship as two PRs (rename separately, reply separately), split at commit 2 / 3 boundary. Default plan is one PR for both.
+Total shipped: ~2400 LOC implementation + ~1200 LOC tests across 10 commits.
 
 ---
 
@@ -438,6 +443,36 @@ If this turns out to need to ship as two PRs (rename separately, reply separatel
 - ~~Session path?~~ → `~/.tider/sessions/replies/...`.
 - ~~Comment fetching depth?~~ → top 20 by score, any depth, max 50.
 
-## Decisions log (filled as work progresses)
+## Decisions log
 
-(Empty until implementation begins.)
+Changes made during implementation, with reasoning.
+
+### 2026-04-30: Type location — `internal/types`, not `package reply`
+
+Spec originally placed `Thread`, `Mode`, `ModeResult`, `LoadedContext`, `Draft`, `Bundle` in `package reply`. Implementation puts them in `internal/types/` (with `Reply` prefix on the reply-specific names) for consistency with the existing pattern: `Brief`, `Research`, `Snapshot`, `DraftBundle`, etc. all live in `internal/types/`. Cross-package types in tider are centralized.
+
+Names: `ReplyMode`, `ReplyModeResult`, `LoadedReplyContext`, `ReplyDraft`, `ReplyBundle`. Plus the review-only `Inspection`, `Heading`, `ReviewNotes`. Thread + Comment didn't need prefixes because they're not reply-specific (no other package owns them).
+
+### 2026-04-30: Singular `--provider` and `--model` instead of plural fan-out flags
+
+Spec listed `--providers`, `--openai-model`, `--anthropic-model` (inherited from the post-command pattern designed for fan-out). Reply uses a single LLM call per spec line 368 ("Single LLM call, returns Bundle with 3-4 labeled variants"); singular flag names accurately reflect that. Multi-provider fan-out would add no signal here — the variants come from prompt structure, not from comparing providers.
+
+### 2026-04-30: CLI wiring rolled into commit 7
+
+Original plan put `cmd/tider/reply.go` as commit 9, after review-mode inspection in commit 8. Implementation rolled CLI into commit 7 (with a "review mode not implemented yet" stub) so reply mode could be smoke-tested end-to-end before review-mode landed on top. Commit 8 then replaced the stub with the actual review pipeline.
+
+### 2026-04-30: Drop "hard cap at 50" comment-fetch line
+
+Spec said "top 20 by score, any depth (flatten the tree). Hard cap at 50 to bound prompt size." Once we sort all comments by score and take top 20, the 50 cap adds nothing. Implementation walks the full tree, sorts, takes top 20.
+
+### 2026-04-30: `golang.org/x/net/html` dep added for review inspection
+
+Review-mode inspection (`reply/inspect.go`) needs to extract title, meta tags, headings, and visible-text snippets from arbitrary HTML. Regex-based extraction would be brittle on real-world pages; `golang.org/x/net/html` is stdlib-adjacent (Google maintained, used by `goquery`, used by Go itself for tooling). One transitive dep: `golang.org/x/net`. Acceptable — the project's "no SDKs / minimal deps" stance was about provider SDKs, not `x/*` packages.
+
+### 2026-04-30: Render header reverted to plain `## Best Pick`
+
+A pre-audit version had `## Best Pick — Best` (with the picked variant's label suffix). Audit caught this as drift from the spec line 312 example. Reverted to `## Best Pick` to match.
+
+### 2026-04-30: `draft-input.json` shape varies by mode
+
+Reply mode writes `reply.DraftInput`. Review mode writes `reply.ReviewDraftInput` (which adds `Notes`). Both serialize fine as JSON; the file is a debug artifact rather than a stable contract, so the variance is acceptable. The `mode` field in `mode.json` tells callers which shape to expect.

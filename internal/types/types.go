@@ -312,3 +312,37 @@ type ReplyBundle struct {
 	PickID    string       `json:"pick_id,omitempty"`
 	Generated time.Time    `json:"generated"`
 }
+
+// Inspection is the structured signal we extract from a review target's
+// HTML page — used as input to the review-notes step. Kept narrow on
+// purpose: the LLM downstream is good at generalizing from a small set
+// of grounded snippets but bad at digesting raw HTML.
+type Inspection struct {
+	URL             string    `json:"url"`
+	Status          int       `json:"status"`
+	Title           string    `json:"title,omitempty"`
+	MetaDescription string    `json:"meta_description,omitempty"`
+	OGTitle         string    `json:"og_title,omitempty"`
+	OGDescription   string    `json:"og_description,omitempty"`
+	Headings        []Heading `json:"headings,omitempty"`
+	Snippets        []string  `json:"snippets,omitempty"`
+	FetchedAt       time.Time `json:"fetched_at"`
+}
+
+// Heading is one h1/h2/h3 from the inspected page.
+type Heading struct {
+	Level int    `json:"level"`
+	Text  string `json:"text"`
+}
+
+// ReviewNotes is the structured observations the review drafter consumes.
+// LLM-generated from an Inspection, kept honest by being grounded in
+// inspection content rather than priors.
+type ReviewNotes struct {
+	TargetURL     string    `json:"target_url"`
+	Strengths     []string  `json:"strengths,omitempty"`
+	Weaknesses    []string  `json:"weaknesses,omitempty"`
+	Suggestions   []string  `json:"suggestions,omitempty"`
+	OpenQuestions []string  `json:"open_questions,omitempty"`
+	Generated     time.Time `json:"generated"`
+}

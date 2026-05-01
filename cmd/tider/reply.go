@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -121,29 +122,7 @@ API key for the chosen provider must be set in the environment
 			return err
 		}
 
-		// 8. Branch on mode.
-		switch modeResult.Mode {
-		case types.ReplyModeReview:
-			if len(modeResult.TargetURLs) == 0 {
-				return errors.New("review request detected, but no shop/site URL was found in the original post — pass --context with notes you want to base the reply on, or wait for a thread that includes a target link")
-			}
-			// Persist target.json so a future commit can pick this up
-			// without re-classifying.
-			if err := sess.WriteJSON("target.json", map[string]any{
-				"url":          modeResult.TargetURLs[0],
-				"alternatives": modeResult.TargetURLs[1:],
-				"reason":       modeResult.Reason,
-			}); err != nil {
-				return err
-			}
-			return errors.New("review mode detected and target saved, but site inspection is not implemented yet — review-mode drafting will land in the next commit on this branch")
-		case types.ReplyModeReply:
-			// Continue to drafter below.
-		default:
-			return fmt.Errorf("unexpected mode: %s", modeResult.Mode)
-		}
-
-		// 9. Drafter — uses tasks.reply (typically the strong model).
+		// 8. Drafter provider — needed for both reply and review pipelines.
 		draftProvider, draftModel, draftMaxTokens := cfg.ForTask("reply")
 		if replyProvider != "" {
 			draftProvider = replyProvider
@@ -158,21 +137,87 @@ API key for the chosen provider must be set in the environment
 		if err != nil {
 			return fmt.Errorf("drafter provider: %w", err)
 		}
-		input := &reply.DraftInput{
-			Thread:        thread,
-			Mode:          modeResult,
-			Contexts:      contexts,
-			AuthorContext: cfg.AuthorContext,
-		}
-		// Snapshot the assembled drafter input so the user can inspect
-		// exactly what the LLM saw — useful for debugging "why did the
-		// drafts come out this way?" without re-running.
-		if err := sess.WriteJSON("draft-input.json", input); err != nil {
-			return err
-		}
-		bundle, err := reply.GenerateReply(ctx, draftP, draftModel, input, draftMaxTokens)
-		if err != nil {
-			return err
+
+		// 9. Branch on mode.
+		var bundle *types.ReplyBundle
+		switch modeResult.Mode {
+		case types.ReplyModeReply:
+			input := &reply.DraftInput{
+				Thread:        thread,
+				Mode:          modeResult,
+				Contexts:      contexts,
+				AuthorContext: cfg.AuthorContext,
+			}
+			// Snapshot the assembled input so the user can debug "why did
+			// the drafts come out this way?" without re-running.
+			if err := sess.WriteJSON("draft-input.json", input); err != nil {
+				return err
+			}
+			bundle, err = reply.GenerateReply(ctx, draftP, draftModel, input, draftMaxTokens)
+			if err != nil {
+				return err
+			}
+
+		case types.ReplyModeReview:
+			if len(modeResult.TargetURLs) == 0 {
+				return errors.New("review request detected, but no shop/site URL was found in the original post — pass --context with notes you want to base the reply on, or wait for a thread that includes a target link")
+			}
+			// Save target.json before any potentially-failing step so the
+			// session preserves what we knew even if inspection fails.
+			if err := sess.WriteJSON("target.json", map[string]any{
+				"url":          modeResult.TargetURLs[0],
+				"alternatives": modeResult.TargetURLs[1:],
+				"reason":       modeResult.Reason,
+			}); err != nil {
+				return err
+			}
+
+			// Inspect the target URL. Failure here preserves the session
+			// (target.json is written; nothing else past this point) — the
+			// spec's "do not generate generic review advice as a fallback"
+			// rule is honored by simply propagating the error.
+			httpClient := &http.Client{Timeout: 30 * time.Second}
+			inspection, err := reply.Inspect(ctx, httpClient, modeResult.TargetURLs[0])
+			if err != nil {
+				return fmt.Errorf("inspection: %w (session preserved at %s)", err, sess.Path())
+			}
+			if err := sess.WriteJSON("inspection.json", inspection); err != nil {
+				return err
+			}
+
+			// Build review notes — uses the cheaper classifier model
+			// since this is structured-summary work, not creative writing.
+			notesProvider, notesModel, notesMaxTokens := cfg.ForTask("reply_mode")
+			notesP, err := llm.New(llm.Config{Provider: notesProvider, Model: notesModel})
+			if err != nil {
+				return fmt.Errorf("review-notes provider: %w", err)
+			}
+			notes, err := reply.BuildReviewNotes(ctx, notesP, notesModel, inspection, notesMaxTokens)
+			if err != nil {
+				return err
+			}
+			if err := sess.WriteJSON("review-notes.json", notes); err != nil {
+				return err
+			}
+
+			// Snapshot review-mode drafter input.
+			input := &reply.ReviewDraftInput{
+				Thread:        thread,
+				Mode:          modeResult,
+				Notes:         notes,
+				Contexts:      contexts,
+				AuthorContext: cfg.AuthorContext,
+			}
+			if err := sess.WriteJSON("draft-input.json", input); err != nil {
+				return err
+			}
+			bundle, err = reply.GenerateReviewReply(ctx, draftP, draftModel, input, draftMaxTokens)
+			if err != nil {
+				return err
+			}
+
+		default:
+			return fmt.Errorf("unexpected mode: %s", modeResult.Mode)
 		}
 		if err := sess.SaveDrafts(bundle); err != nil {
 			return err
