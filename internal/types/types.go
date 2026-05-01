@@ -234,3 +234,133 @@ type ResearchReport struct {
 	Insights  ResearchInsights `json:"insights"`
 	Generated time.Time        `json:"generated"`
 }
+
+// Thread is a fetched Reddit submission plus a slice of selected comments.
+// Used by `tider reply` for both mode detection (uses post fields only)
+// and reply drafting (uses post + comments).
+type Thread struct {
+	URL         string    `json:"url"`
+	Subreddit   string    `json:"subreddit"`
+	PostID      string    `json:"post_id"`
+	Title       string    `json:"title"`
+	Body        string    `json:"body"`
+	Author      string    `json:"author"`
+	Flair       string    `json:"flair,omitempty"`
+	OutboundURL string    `json:"outbound_url,omitempty"`
+	Comments    []Comment `json:"comments"`
+	FetchedAt   time.Time `json:"fetched_at"`
+}
+
+// Comment is a single Reddit comment, flattened from its position in the
+// reply tree. ParentID is preserved so callers can reconstruct hierarchy
+// if needed (LLM prompt rendering, for example).
+type Comment struct {
+	ID         string  `json:"id"`
+	ParentID   string  `json:"parent_id,omitempty"`
+	Author     string  `json:"author"`
+	Body       string  `json:"body"`
+	Score      int     `json:"score"`
+	CreatedUTC float64 `json:"created_utc"`
+}
+
+// ReplyMode is one of "reply" or "review", per `tider reply` mode detection.
+type ReplyMode string
+
+const (
+	ReplyModeReply  ReplyMode = "reply"
+	ReplyModeReview ReplyMode = "review"
+)
+
+// ReplyModeResult is the output of the LLM-driven mode classifier. Mode
+// detection uses only the OP fields (title/flair/body/outbound URL).
+// TargetURLs are what the classifier identified plus any URLs the
+// post-extraction pass found in the body — deduplicated.
+type ReplyModeResult struct {
+	Mode       ReplyMode `json:"mode"`
+	Reason     string    `json:"reason,omitempty"`
+	TargetURLs []string  `json:"target_urls,omitempty"`
+}
+
+// LoadedReplyContext is a snapshot of a context-bank entry at the time
+// `tider reply` was run. Source is "bank" (loaded by id) or "path"
+// (loaded by direct file path). Body is the verbatim markdown contents
+// — preserved in the session so future re-runs against the same session
+// see exactly what the LLM saw.
+type LoadedReplyContext struct {
+	ID     string `json:"id,omitempty"`
+	Source string `json:"source"`
+	Path   string `json:"path"`
+	Body   string `json:"body"`
+}
+
+// ReplyDraft is one variant produced by the reply drafter.
+type ReplyDraft struct {
+	ID        string `json:"id"`
+	Label     string `json:"label"` // "best" | "short" | "detailed" | "question-first"
+	Text      string `json:"text"`
+	Reasoning string `json:"reasoning,omitempty"`
+}
+
+// ReplyBundle holds the variants a single reply-drafting call produced
+// plus the pick the LLM recommends. Same shape regardless of mode
+// (reply vs review).
+type ReplyBundle struct {
+	ThreadURL string       `json:"thread_url"`
+	Subreddit string       `json:"subreddit"`
+	Mode      ReplyMode    `json:"mode"`
+	Drafts    []ReplyDraft `json:"drafts"`
+	PickID    string       `json:"pick_id,omitempty"`
+	Generated time.Time    `json:"generated"`
+}
+
+// Inspection is the structured signal we extract from a review target's
+// page. Two extraction backends populate this struct, identified by
+// Source:
+//
+//   - "html"      — stdlib net/http + golang.org/x/net/html. Always
+//                   available. Title/meta/headings/snippets only.
+//   - "firecrawl" — firecrawl.dev API. Used when FIRECRAWL_API_KEY is in
+//                   the env. Adds Markdown (cleaner than Snippets),
+//                   ScreenshotURL (full-page PNG), and ImageURLs.
+//
+// Downstream steps (review notes, drafter) read whatever's present and
+// gracefully degrade. The ScreenshotURL/ImageURLs unlock visual review
+// observations once a vision-capable LLM call is wired in (separate
+// follow-up — current notes step is text-only).
+type Inspection struct {
+	URL             string    `json:"url"`
+	Status          int       `json:"status"`
+	Source          string    `json:"source"` // "html" | "firecrawl"
+	Title           string    `json:"title,omitempty"`
+	MetaDescription string    `json:"meta_description,omitempty"`
+	OGTitle         string    `json:"og_title,omitempty"`
+	OGDescription   string    `json:"og_description,omitempty"`
+	Headings        []Heading `json:"headings,omitempty"`
+	Snippets        []string  `json:"snippets,omitempty"`
+
+	// Populated only by the firecrawl backend.
+	Markdown       string   `json:"markdown,omitempty"`
+	ScreenshotURL  string   `json:"screenshot_url,omitempty"`
+	ScreenshotPath string   `json:"screenshot_path,omitempty"` // local path under session/screenshots if downloaded
+	ImageURLs      []string `json:"image_urls,omitempty"`
+
+	FetchedAt time.Time `json:"fetched_at"`
+}
+
+// Heading is one h1/h2/h3 from the inspected page.
+type Heading struct {
+	Level int    `json:"level"`
+	Text  string `json:"text"`
+}
+
+// ReviewNotes is the structured observations the review drafter consumes.
+// LLM-generated from an Inspection, kept honest by being grounded in
+// inspection content rather than priors.
+type ReviewNotes struct {
+	TargetURL     string    `json:"target_url"`
+	Strengths     []string  `json:"strengths,omitempty"`
+	Weaknesses    []string  `json:"weaknesses,omitempty"`
+	Suggestions   []string  `json:"suggestions,omitempty"`
+	OpenQuestions []string  `json:"open_questions,omitempty"`
+	Generated     time.Time `json:"generated"`
+}

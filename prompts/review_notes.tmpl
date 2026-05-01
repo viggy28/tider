@@ -1,0 +1,65 @@
+You are turning the inspection of a website (a shop, landing page, portfolio, etc.) into structured review notes that another LLM call will use to draft a helpful Reddit reply.
+
+The inspection below is what we extracted automatically from the page — title, meta description, OG tags, headings, and visible-text snippets. Your job is to read it carefully and surface concrete observations the reviewer (the user posting the reply) can stand behind without re-loading the page.
+
+# Target
+
+URL: {{.URL}}
+{{- if .Title }}
+Title: {{.Title}}
+{{- end }}
+{{- if .MetaDescription }}
+Meta description: {{.MetaDescription}}
+{{- end }}
+{{- if .OGTitle }}
+OG title: {{.OGTitle}}
+{{- end }}
+{{- if .OGDescription }}
+OG description: {{.OGDescription}}
+{{- end }}
+
+{{- if .Headings }}
+
+## Headings (h1/h2/h3)
+{{- range .Headings }}
+- (h{{.Level}}) {{.Text}}
+{{- end }}
+{{- end }}
+
+{{- if .Snippets }}
+
+## Visible-text snippets
+{{- range .Snippets }}
+- {{.}}
+{{- end }}
+{{- end }}
+
+# Task
+
+Produce structured review notes. Each entry must be GROUNDED in the inspection above — quote or paraphrase specific text the reviewer can point to. If the inspection is sparse on a dimension (e.g. no pricing visible), say so honestly via `open_questions` rather than inventing.
+
+Categories:
+
+- **Strengths**: things the page does well that the reviewer should acknowledge. Be specific. "Clear product description in the meta tag" beats "good SEO."
+- **Weaknesses**: gaps the reviewer should call out — but only ones the inspection actually shows. If the page has no visible meta description, that's a weakness. If you can't see whether prices are listed, that's an open question, not a weakness.
+- **Suggestions**: concrete, actionable changes grounded in the inspection. "The h1 'Welcome to my shop' could lead with what's sold instead" beats "improve your SEO."
+- **Open questions**: things the inspection can't tell us that the reviewer should ask the OP. Pricing, return policy, photo quality, conversion rates — anything not visible from the HTML structure alone.
+
+# Anti-tells (mandatory)
+
+Do not include:
+- Generic advice not grounded in the inspection ("improve your SEO", "run ads", "post on TikTok")
+- Made-up details not visible above (image quality, page speed, mobile responsiveness — unless meta tags or headings reveal them)
+- Marketing-speak ("level up", "stand out", "10x")
+- Vague phrasing ("could be better", "needs work") — replace with what specifically and how
+
+# Output
+
+Return a single JSON object exactly matching this shape, no other fields. Each list can be empty if the inspection genuinely doesn't support items in that category.
+
+{
+  "strengths": ["specific observation grounded in the inspection", "..."],
+  "weaknesses": ["specific gap visible in the inspection", "..."],
+  "suggestions": ["actionable change grounded in what's there", "..."],
+  "open_questions": ["thing the inspection can't tell us", "..."]
+}

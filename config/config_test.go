@@ -99,7 +99,7 @@ func TestForTaskUsesTaskOverride(t *testing.T) {
 
 func TestFanOutModels(t *testing.T) {
 	c := Default()
-	am, om, mt := c.FanOutModels("draft")
+	am, om, mt := c.FanOutModels("post")
 	if am != "claude-sonnet-4-7" {
 		t.Errorf("anthropic model = %q", am)
 	}

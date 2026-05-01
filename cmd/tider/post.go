@@ -21,39 +21,39 @@ import (
 )
 
 var (
-	draftBriefPath  string
-	draftSub        string
-	draftProviders  string
-	draftAnthropic  string
-	draftOpenAI     string
-	draftRender     string
-	draftDryRun     bool
-	draftRefresh    bool
-	draftNotesPath  string
-	draftCacheRoot  string
-	draftMaxTokens  int
-	draftVariantSet string
+	postBriefPath  string
+	postSub        string
+	postProviders  string
+	postAnthropic  string
+	postOpenAI     string
+	postRender     string
+	postDryRun     bool
+	postRefresh    bool
+	postNotesPath  string
+	postCacheRoot  string
+	postMaxTokens  int
+	postVariantSet string
 )
 
-var draftCmd = &cobra.Command{
-	Use:   "draft",
-	Short: "Generate drafts (fan-out across providers) for a Brief on one subreddit",
-	Long: `draft turns a Brief + per-sub research into structured Drafts. By default
-it fans out across both Anthropic and OpenAI concurrently so you can
-compare framings side-by-side.
+var postCmd = &cobra.Command{
+	Use:   "post",
+	Short: "Draft a Reddit submission (fan-out across providers) for a Brief on one subreddit",
+	Long: `post turns a Brief + per-sub research into structured post drafts. By
+default it fans out across both Anthropic and OpenAI concurrently so you
+can compare framings side-by-side.
 
-  tider draft --brief=brief.json --sub=golang
-  tider draft --brief=brief.json --sub=PostgreSQL --providers=anthropic
-  tider draft --brief=brief.json --sub=golang --render=markdown
-  tider draft --brief=brief.json --sub=golang --dry-run    # show prompt only
+  tider post --brief=brief.json --sub=golang
+  tider post --brief=brief.json --sub=PostgreSQL --providers=anthropic
+  tider post --brief=brief.json --sub=golang --render=markdown
+  tider post --brief=brief.json --sub=golang --dry-run    # show prompt only
 
 API keys come from env vars: ANTHROPIC_API_KEY, OPENAI_API_KEY. Providers
 without a key are skipped with a warning rather than failing the run.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if draftBriefPath == "" || draftSub == "" {
+		if postBriefPath == "" || postSub == "" {
 			return errors.New("--brief and --sub are required")
 		}
-		brief, err := loadBrief(draftBriefPath)
+		brief, err := loadBrief(postBriefPath)
 		if err != nil {
 			return err
 		}
@@ -62,11 +62,11 @@ without a key are skipped with a warning rather than failing the run.`,
 		if err != nil {
 			return fmt.Errorf("home dir: %w", err)
 		}
-		cacheRoot := draftCacheRoot
+		cacheRoot := postCacheRoot
 		if cacheRoot == "" {
 			cacheRoot = filepath.Join(home, ".tider", "cache")
 		}
-		notesPath := draftNotesPath
+		notesPath := postNotesPath
 		if notesPath == "" {
 			notesPath = filepath.Join(home, ".tider", "subreddits.yaml")
 		}
@@ -77,30 +77,30 @@ without a key are skipped with a warning rather than failing the run.`,
 		}
 		client := reddit.NewClient(reddit.NewCache(cacheRoot))
 		ctx := context.Background()
-		researchBundle, err := research.For(ctx, client, notes, draftSub, draftRefresh)
+		researchBundle, err := research.For(ctx, client, notes, postSub, postRefresh)
 		if err != nil {
-			return fmt.Errorf("research %s: %w", draftSub, err)
+			return fmt.Errorf("research %s: %w", postSub, err)
 		}
 
 		cfg, err := config.Load()
 		if err != nil {
 			return err
 		}
-		_, _, cfgMaxTokens := cfg.FanOutModels("draft")
+		_, _, cfgMaxTokens := cfg.FanOutModels("post")
 
 		opts := draft.Default()
-		if draftVariantSet == "full" {
+		if postVariantSet == "full" {
 			opts = draft.Full()
 		}
 		// Resolve max_tokens: explicit flag wins, then config, then opts default.
-		if draftMaxTokens > 0 {
-			opts.MaxTokens = draftMaxTokens
+		if postMaxTokens > 0 {
+			opts.MaxTokens = postMaxTokens
 		} else if cfgMaxTokens > 0 {
 			opts.MaxTokens = cfgMaxTokens
 		}
 		opts.AuthorContext = cfg.AuthorContext
 
-		if draftDryRun {
+		if postDryRun {
 			prompt, err := draft.RenderPrompt(*brief, *researchBundle, opts)
 			if err != nil {
 				return err
@@ -110,12 +110,12 @@ without a key are skipped with a warning rather than failing the run.`,
 		}
 
 		// Resolve fan-out provider list and per-provider models with config fallback.
-		providers := draftProviders
+		providers := postProviders
 		if providers == "" {
 			providers = cfg.Defaults.Providers
 		}
-		anthropicModel := draftAnthropic
-		openaiModel := draftOpenAI
+		anthropicModel := postAnthropic
+		openaiModel := postOpenAI
 		if anthropicModel == "" {
 			anthropicModel = cfg.LLM.AnthropicModel
 		}
@@ -140,12 +140,12 @@ without a key are skipped with a warning rather than failing the run.`,
 		// log to stderr and proceed.
 		if root, derr := lastdraft.Default(); derr == nil {
 			snap := &types.Snapshot{Brief: *brief, Research: *researchBundle, Bundle: *bundle}
-			if serr := lastdraft.Save(root, draftSub, snap); serr != nil {
+			if serr := lastdraft.Save(root, postSub, snap); serr != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to save last-draft snapshot: %v\n", serr)
 			}
 		}
 
-		switch resolveRender(draftRender) {
+		switch resolveRender(postRender) {
 		case "markdown":
 			md := draft.RenderMarkdown(bundle)
 			if isTerminal(os.Stdout) {
@@ -159,7 +159,7 @@ without a key are skipped with a warning rather than failing the run.`,
 			}
 			fmt.Println(string(out))
 		default:
-			return fmt.Errorf("unknown --render value: %s (use json or markdown)", draftRender)
+			return fmt.Errorf("unknown --render value: %s (use json or markdown)", postRender)
 		}
 		return nil
 	},
@@ -216,16 +216,16 @@ func buildProviderRefs(providersFlag, anthropicModel, openaiModel string) ([]dra
 }
 
 func init() {
-	draftCmd.Flags().StringVar(&draftBriefPath, "brief", "", "path to a brief.json (output of `tider intake`)")
-	draftCmd.Flags().StringVar(&draftSub, "sub", "", "subreddit name to draft for (e.g., golang)")
-	draftCmd.Flags().StringVar(&draftProviders, "providers", "", "comma-separated providers to fan out across (default from config)")
-	draftCmd.Flags().StringVar(&draftAnthropic, "anthropic-model", "", "Anthropic model to use (default from config)")
-	draftCmd.Flags().StringVar(&draftOpenAI, "openai-model", "", "OpenAI model to use (default from config)")
-	draftCmd.Flags().StringVar(&draftRender, "render", "", "output format: json | markdown (default: markdown in TTY, json when piped)")
-	draftCmd.Flags().BoolVar(&draftDryRun, "dry-run", false, "render the prompt only, do not call the LLM")
-	draftCmd.Flags().BoolVar(&draftRefresh, "refresh", false, "force fresh Reddit fetch, bypass cache")
-	draftCmd.Flags().StringVar(&draftNotesPath, "notes", "", "path to subreddits.yaml (default ~/.tider/subreddits.yaml)")
-	draftCmd.Flags().StringVar(&draftCacheRoot, "cache", "", "Reddit cache root dir (default ~/.tider/cache)")
-	draftCmd.Flags().IntVar(&draftMaxTokens, "max-tokens", 0, "LLM completion budget; 0 uses variant default")
-	draftCmd.Flags().StringVar(&draftVariantSet, "variants", "default", "variant set: default (2×3×2) | full (3×5×3)")
+	postCmd.Flags().StringVar(&postBriefPath, "brief", "", "path to a brief.json (output of `tider intake`)")
+	postCmd.Flags().StringVar(&postSub, "sub", "", "subreddit name to draft for (e.g., golang)")
+	postCmd.Flags().StringVar(&postProviders, "providers", "", "comma-separated providers to fan out across (default from config)")
+	postCmd.Flags().StringVar(&postAnthropic, "anthropic-model", "", "Anthropic model to use (default from config)")
+	postCmd.Flags().StringVar(&postOpenAI, "openai-model", "", "OpenAI model to use (default from config)")
+	postCmd.Flags().StringVar(&postRender, "render", "", "output format: json | markdown (default: markdown in TTY, json when piped)")
+	postCmd.Flags().BoolVar(&postDryRun, "dry-run", false, "render the prompt only, do not call the LLM")
+	postCmd.Flags().BoolVar(&postRefresh, "refresh", false, "force fresh Reddit fetch, bypass cache")
+	postCmd.Flags().StringVar(&postNotesPath, "notes", "", "path to subreddits.yaml (default ~/.tider/subreddits.yaml)")
+	postCmd.Flags().StringVar(&postCacheRoot, "cache", "", "Reddit cache root dir (default ~/.tider/cache)")
+	postCmd.Flags().IntVar(&postMaxTokens, "max-tokens", 0, "LLM completion budget; 0 uses variant default")
+	postCmd.Flags().StringVar(&postVariantSet, "variants", "default", "variant set: default (2×3×2) | full (3×5×3)")
 }
