@@ -177,6 +177,28 @@ func TestRenderReplyPromptIncludesContextAndAuthor(t *testing.T) {
 			t.Errorf("prompt should not define legacy/removed variant slot %q (v2 spec)\n--- prompt ---\n%s", b, prompt)
 		}
 	}
+
+	// Drafts-array cap regression guard. SPEC_REPLY_REFINEMENT.md is
+	// emphatic: "Two to four strong drafts are better than a full menu"
+	// and "Keep default output to 2-4 drafts total." The variant set has
+	// 5 slots (best/shorter/counterpoint/warmer-personal/question), so
+	// any "2-5" wording in the Output section would license the full
+	// menu the spec calls a failure. The Output section sits last in the
+	// prompt and tends to anchor numerical behavior — keep it at 2-4.
+	bannedCountWording := []string{
+		"2-5 entries",
+		"2 to 5 entries",
+		"2-5 drafts",
+		"2 to 5 drafts",
+	}
+	for _, b := range bannedCountWording {
+		if strings.Contains(prompt, b) {
+			t.Errorf("prompt licenses the full 5-slot menu (%q); spec caps at 2-4\n--- prompt ---\n%s", b, prompt)
+		}
+	}
+	if !strings.Contains(prompt, "2-4 entries") && !strings.Contains(prompt, "2 to 4") {
+		t.Errorf("prompt should specify the 2-4 drafts cap explicitly\n--- prompt ---\n%s", prompt)
+	}
 }
 
 // Flair is conditional: it must appear in the rendered prompt only when
