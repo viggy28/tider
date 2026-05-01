@@ -262,3 +262,53 @@ type Comment struct {
 	Score      int     `json:"score"`
 	CreatedUTC float64 `json:"created_utc"`
 }
+
+// ReplyMode is one of "reply" or "review", per `tider reply` mode detection.
+type ReplyMode string
+
+const (
+	ReplyModeReply  ReplyMode = "reply"
+	ReplyModeReview ReplyMode = "review"
+)
+
+// ReplyModeResult is the output of the LLM-driven mode classifier. Mode
+// detection uses only the OP fields (title/flair/body/outbound URL).
+// TargetURLs are what the classifier identified plus any URLs the
+// post-extraction pass found in the body — deduplicated.
+type ReplyModeResult struct {
+	Mode       ReplyMode `json:"mode"`
+	Reason     string    `json:"reason,omitempty"`
+	TargetURLs []string  `json:"target_urls,omitempty"`
+}
+
+// LoadedReplyContext is a snapshot of a context-bank entry at the time
+// `tider reply` was run. Source is "bank" (loaded by id) or "path"
+// (loaded by direct file path). Body is the verbatim markdown contents
+// — preserved in the session so future re-runs against the same session
+// see exactly what the LLM saw.
+type LoadedReplyContext struct {
+	ID     string `json:"id,omitempty"`
+	Source string `json:"source"`
+	Path   string `json:"path"`
+	Body   string `json:"body"`
+}
+
+// ReplyDraft is one variant produced by the reply drafter.
+type ReplyDraft struct {
+	ID        string `json:"id"`
+	Label     string `json:"label"` // "best" | "short" | "detailed" | "question-first"
+	Text      string `json:"text"`
+	Reasoning string `json:"reasoning,omitempty"`
+}
+
+// ReplyBundle holds the variants a single reply-drafting call produced
+// plus the pick the LLM recommends. Same shape regardless of mode
+// (reply vs review).
+type ReplyBundle struct {
+	ThreadURL string       `json:"thread_url"`
+	Subreddit string       `json:"subreddit"`
+	Mode      ReplyMode    `json:"mode"`
+	Drafts    []ReplyDraft `json:"drafts"`
+	PickID    string       `json:"pick_id,omitempty"`
+	Generated time.Time    `json:"generated"`
+}
