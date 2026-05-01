@@ -227,7 +227,12 @@ func TestRenderReviewPromptIncludesVisualNotes(t *testing.T) {
 		"no in-hand or scale shot",
 		"## Kova signals",
 		"texture invisible at the photo crops",
-		"do not recommend \"show your maker process\"", // gating rule appears in the prompt
+		// Per SPEC_REVIEW_DRAFT_REFINEMENT.md the Kova lens is reshaped per
+		// shop type — handmade/boutique gets the maker-process framing,
+		// other shop types get reshaped advice (real-use imagery, etc.)
+		// without that framing.
+		"\"show your maker process\"", // appears in both the handmade-allowed and B2B-forbidden contexts
+		"NOT \"show your maker process\"", // explicit reshape rule for B2B/SaaS/etc.
 	}
 	for _, s := range checks {
 		if !strings.Contains(prompt, s) {
@@ -260,5 +265,108 @@ func TestRenderReviewPromptOmitsEmptyCategories(t *testing.T) {
 		if strings.Contains(prompt, s) {
 			t.Errorf("category section %q should be omitted when empty", s)
 		}
+	}
+}
+
+// SPEC_REVIEW_DRAFT_REFINEMENT.md tightens review-mode drafting after
+// the PND fixture run produced an audit-shaped Best Pick with 5 fixes.
+// The prompt must now enforce: 2-3 fixes (hard cap), severity-based
+// ranking, mobile-claim handling for desktop-only captures, B2B
+// pricing/policy guardrails with concrete allowed/forbidden phrases,
+// reshaped Kova lens for non-handmade shop types, "Structured Review"
+// display label (space, not hyphen), and dropping visual-notes
+// questions[] from Best Pick / Shorter.
+func TestRenderReviewPromptIncludesV2RefinementRules(t *testing.T) {
+	in := sampleReviewInput()
+	in.Contexts = []types.LoadedReplyContext{{ID: "kova", Source: "bank", Body: "kova body content"}}
+
+	prompt, err := RenderReviewPrompt(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Hard cap on fixes + tighter word budget for Best Pick.
+	hardCapChecks := []string{
+		"MAX 3 fixes",                 // explicit hard cap on Best Pick fix list
+		"150-260 words",               // tighter word budget than the old 150-300
+		"2-3 entries",                 // drafts array cap (down from 2-4)
+		"emitting a full slate makes", // failure-mode note guarding the cap
+	}
+	for _, s := range hardCapChecks {
+		if !strings.Contains(prompt, s) {
+			t.Errorf("review prompt missing hard-cap rule %q\n--- prompt ---\n%s", s, prompt)
+		}
+	}
+
+	// Severity-based ranking: only high/medium make Best Pick.
+	severityChecks := []string{
+		"Severity-based ranking",
+		"`severity` of `high` or `medium`",
+		"`severity=low`",       // demoted to structured-review only
+		"2 strong fixes beat 3 fixes where one is filler",
+	}
+	for _, s := range severityChecks {
+		if !strings.Contains(prompt, s) {
+			t.Errorf("review prompt missing severity rule %q\n--- prompt ---\n%s", s, prompt)
+		}
+	}
+
+	// Mobile-claim handling — defensive skip when limitations contradict.
+	mobileChecks := []string{
+		"Mobile-claim handling",
+		"Skip any `mobile_risk` observation",
+		"desktop-only inspection",
+	}
+	for _, s := range mobileChecks {
+		if !strings.Contains(prompt, s) {
+			t.Errorf("review prompt missing mobile rule %q\n--- prompt ---\n%s", s, prompt)
+		}
+	}
+
+	// B2B pricing/policy rules with concrete allowed/forbidden phrases.
+	pricingChecks := []string{
+		"B2B / quote-driven pricing & policy guidance",
+		"If this is quote-only, make that explicit",
+		"Add MOQ / lead-time / spec-sheet expectations",
+		"Move the quote CTA to the product/category decision point",
+		"Forbidden phrasings",
+		"Publish prices.",
+		"Pricing is the biggest issue.",
+	}
+	for _, s := range pricingChecks {
+		if !strings.Contains(prompt, s) {
+			t.Errorf("review prompt missing pricing/policy rule %q\n--- prompt ---\n%s", s, prompt)
+		}
+	}
+
+	// Reshaped Kova lens — non-handmade shops still get visual-proof
+	// guidance, just without the maker-process framing.
+	kovaChecks := []string{
+		"Kova lens",
+		"reshaped",
+		"real-use imagery",
+		"workers wearing PPE",          // concrete B2B example
+		"reusable organic content",     // organic-content reuse angle
+	}
+	for _, s := range kovaChecks {
+		if !strings.Contains(prompt, s) {
+			t.Errorf("review prompt missing Kova-lens reshape rule %q\n--- prompt ---\n%s", s, prompt)
+		}
+	}
+
+	// Visual-notes questions[] handling — drop from Best Pick / Shorter.
+	if !strings.Contains(prompt, "Visual-notes `questions[]` handling") {
+		t.Errorf("review prompt missing visual-notes questions[] handling rule\n--- prompt ---\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "no \"Open Qs:\" tail blocks") {
+		t.Errorf("review prompt missing the explicit ban on Open Qs: tail blocks\n--- prompt ---\n%s", prompt)
+	}
+
+	// Display label rename — Structured Review (space) per spec.
+	if !strings.Contains(prompt, "displayed as **Structured Review**") {
+		t.Errorf("review prompt should reference 'Structured Review' (space, not hyphen)\n--- prompt ---\n%s", prompt)
+	}
+	if strings.Contains(prompt, "displayed as **Structured-Review**") {
+		t.Errorf("review prompt still references the legacy 'Structured-Review' (hyphen) form\n--- prompt ---\n%s", prompt)
 	}
 }

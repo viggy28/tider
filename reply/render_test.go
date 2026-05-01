@@ -193,8 +193,9 @@ func TestTitleCaseLabel(t *testing.T) {
 		{"counterpoint", "Counterpoint"},
 		{"warmer-personal", "Warmer / Personal"}, // explicit spacing per spec
 		{"question", "Question"},
-		// Review-mode-specific.
-		{"structured-review", "Structured-Review"},
+		// Review-mode-specific (SPEC_REVIEW_DRAFT_REFINEMENT.md). Renders
+		// with a space, not a hyphen — the spec calls it a noun phrase.
+		{"structured-review", "Structured Review"},
 		// Legacy ids preserved in the map for old session re-renders.
 		{"short", "Short"},
 		{"thread-aware", "Thread-Aware"},
