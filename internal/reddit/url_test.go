@@ -44,6 +44,8 @@ func TestParseThreadURL(t *testing.T) {
 		{"https://reddit.com/r/golang/comments", "", "", false, "comments without id"},
 		{"https://reddit.com/r/golang/wiki/index", "", "", false, "non-comments path"},
 		{"https://redd.it/", "", "", false, "redd.it without id"},
+		{"https://reddit.com/comments//slug", "", "", false, "empty post id global form"},
+		{"https://reddit.com/r/golang/comments//slug/", "", "", false, "empty post id sub form"},
 	}
 	for _, c := range cases {
 		t.Run(c.desc, func(t *testing.T) {

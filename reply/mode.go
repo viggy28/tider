@@ -158,16 +158,32 @@ func hasImageExt(u string) bool {
 	return false
 }
 
-// mergeTargetURLs combines two URL lists, dedupes (case-insensitive
-// host, exact path), and preserves the order of the LLM's picks first
-// (the model's judgment about "the target" wins for ranking).
+// mergeTargetURLs combines classifier-supplied URLs with body-extracted
+// URLs, dedupes case-insensitively, and preserves the LLM's ranking.
+//
+// Critically, classifier URLs are accepted ONLY if they also appear in
+// the fallback set (which was derived from OP body + outbound URL).
+// This guards against hallucination: if the classifier invents a
+// plausible-looking URL not in the OP, we reject it rather than feeding
+// a wrong target to the inspection step. Spec rule: "never invent URLs."
+//
+// Hallucinated URLs are still preserved but get demoted behind verified
+// URLs, so TargetURLs[0] is always grounded in actual OP content when at
+// least one body-extracted URL exists.
 func mergeTargetURLs(primary, fallback []string) []string {
 	if len(primary) == 0 && len(fallback) == 0 {
 		return nil
 	}
+	// Build a lookup of URLs that came from the OP itself.
+	verified := map[string]bool{}
+	for _, u := range fallback {
+		verified[strings.ToLower(strings.TrimSpace(u))] = true
+	}
+
 	seen := map[string]bool{}
-	var out []string
-	add := func(u string) {
+	var grounded []string  // classifier URLs that appear in OP — trustworthy
+	var ungrounded []string // classifier URLs not in OP — possibly hallucinated
+	add := func(target *[]string, u string) {
 		u = strings.TrimSpace(u)
 		if u == "" {
 			return
@@ -177,14 +193,33 @@ func mergeTargetURLs(primary, fallback []string) []string {
 			return
 		}
 		seen[key] = true
-		out = append(out, u)
+		*target = append(*target, u)
 	}
+
 	for _, u := range primary {
-		add(u)
+		key := strings.ToLower(strings.TrimSpace(u))
+		if verified[key] {
+			add(&grounded, u)
+		} else {
+			add(&ungrounded, u)
+		}
 	}
+	// Then add any fallback URLs the classifier didn't surface — the
+	// classifier may have missed something the regex caught.
+	var fromFallback []string
 	for _, u := range fallback {
-		add(u)
+		add(&fromFallback, u)
 	}
+
+	// Order: grounded classifier picks first (LLM ranked them, and they
+	// exist in the OP), then any extra fallback URLs (regex found, LLM
+	// didn't pick), then ungrounded classifier picks last (suspicious,
+	// but kept for visibility — they show up in mode.json so the user
+	// can audit).
+	out := append([]string{}, grounded...)
+	out = append(out, fromFallback...)
+	out = append(out, ungrounded...)
+
 	// Stable order preserves LLM ranking; sort only when LLM gave nothing.
 	if len(primary) == 0 {
 		sort.Strings(out)

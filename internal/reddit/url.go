@@ -53,10 +53,22 @@ func ParseThreadURL(raw string) (sub, postID string, err error) {
 		// Two long forms:
 		//   /r/<sub>/comments/<id>[/...]
 		//   /comments/<id>[/...]
+		// Empty segments (e.g. /comments//slug or /r/sub/comments//slug)
+		// are rejected here rather than left to fail deep in fetch with
+		// a misleading network error.
 		switch {
 		case len(parts) >= 2 && parts[0] == "comments":
+			if parts[1] == "" {
+				return "", "", fmt.Errorf("malformed reddit url: %s (empty post id between /comments/ and trailing slash)", raw)
+			}
 			return "", parts[1], nil
 		case len(parts) >= 4 && parts[0] == "r" && parts[2] == "comments":
+			if parts[1] == "" {
+				return "", "", fmt.Errorf("malformed reddit url: %s (empty subreddit between /r/ and /comments/)", raw)
+			}
+			if parts[3] == "" {
+				return "", "", fmt.Errorf("malformed reddit url: %s (empty post id between /comments/ and slug)", raw)
+			}
 			return parts[1], parts[3], nil
 		default:
 			return "", "", fmt.Errorf("unsupported reddit url shape: %s (expected /r/<sub>/comments/<id>/... or /comments/<id>/...)", raw)

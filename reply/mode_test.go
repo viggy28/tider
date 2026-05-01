@@ -209,14 +209,59 @@ also a deep link https://blog.example.com/2026/04/post.html`,
 }
 
 func TestMergeTargetURLsDedup(t *testing.T) {
+	// Both classifier URLs appear in fallback (i.e. were extracted from
+	// the OP body) — they're "grounded" and rank first, in classifier
+	// order. fallback contributes c.example.com which the LLM didn't
+	// pick — appended after grounded.
 	primary := []string{"https://A.example.com", "https://b.example.com"}
-	fallback := []string{"https://a.example.com", "https://c.example.com"}
+	fallback := []string{"https://a.example.com", "https://b.example.com", "https://c.example.com"}
 	got := mergeTargetURLs(primary, fallback)
-	// Case-insensitive dedup keeps the first-seen casing (the primary's "A").
 	if len(got) != 3 {
 		t.Fatalf("expected 3, got %v", got)
 	}
+	// Grounded classifier picks (case from primary preserved), then the
+	// extra fallback URL.
 	if got[0] != "https://A.example.com" || got[1] != "https://b.example.com" || got[2] != "https://c.example.com" {
 		t.Errorf("dedup result: %v", got)
+	}
+}
+
+func TestMergeTargetURLsDemotesHallucinatedClassifierURLs(t *testing.T) {
+	// Classifier returned two URLs:
+	//   - https://real-shop.example.com   IS in fallback (came from OP)
+	//   - https://invented.example.com    NOT in fallback (hallucinated)
+	// fallback also has https://other.example.com that the classifier
+	// didn't pick. Expected order:
+	//   1. real-shop  (grounded — passed verification)
+	//   2. other      (extra fallback URL)
+	//   3. invented   (ungrounded — kept but demoted, so [0] is safe to inspect)
+	primary := []string{"https://invented.example.com", "https://real-shop.example.com"}
+	fallback := []string{"https://real-shop.example.com", "https://other.example.com"}
+	got := mergeTargetURLs(primary, fallback)
+	if len(got) != 3 {
+		t.Fatalf("expected 3 URLs, got %v", got)
+	}
+	if got[0] != "https://real-shop.example.com" {
+		t.Errorf("hallucinated URL not demoted: got[0] = %q", got[0])
+	}
+	if got[1] != "https://other.example.com" {
+		t.Errorf("extra fallback URL position wrong: got[1] = %q", got[1])
+	}
+	if got[2] != "https://invented.example.com" {
+		t.Errorf("hallucinated URL not last: got[2] = %q", got[2])
+	}
+}
+
+func TestMergeTargetURLsAllHallucinatedFallbackEmpty(t *testing.T) {
+	// Edge case: classifier returned URLs but fallback is empty (the OP
+	// body had no parseable URLs). Without verification info we have to
+	// trust the classifier — preserve original order.
+	primary := []string{"https://a.example.com", "https://b.example.com"}
+	got := mergeTargetURLs(primary, nil)
+	if len(got) != 2 {
+		t.Fatalf("got %v", got)
+	}
+	if got[0] != "https://a.example.com" || got[1] != "https://b.example.com" {
+		t.Errorf("classifier order should be preserved when fallback is empty: %v", got)
 	}
 }

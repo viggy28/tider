@@ -65,6 +65,78 @@ func TestNewSessionRequiresPostID(t *testing.T) {
 	}
 }
 
+func TestNewSessionUniqueOnSameDayRerun(t *testing.T) {
+	// Three runs against the same thread on the same day should produce
+	// three distinct directories so a rerun doesn't overwrite the prior
+	// run's artifacts (thread.json/mode.json/drafts.json/output.md).
+	root := t.TempDir()
+	now := time.Date(2026, 4, 30, 22, 22, 0, 0, time.UTC)
+
+	s1, err := NewSession(root, "shopify", "1t06474", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s2, err := NewSession(root, "shopify", "1t06474", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s3, err := NewSession(root, "shopify", "1t06474", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if s1.Path() == s2.Path() || s2.Path() == s3.Path() || s1.Path() == s3.Path() {
+		t.Fatalf("paths collided: %q, %q, %q", s1.Path(), s2.Path(), s3.Path())
+	}
+	// First run is the clean unsuffixed slug; subsequent runs get -2, -3.
+	if !strings.HasSuffix(s1.Path(), "2026-04-30-shopify-1t06474") {
+		t.Errorf("first run path = %q", s1.Path())
+	}
+	if !strings.HasSuffix(s2.Path(), "2026-04-30-shopify-1t06474-2") {
+		t.Errorf("second run path = %q", s2.Path())
+	}
+	if !strings.HasSuffix(s3.Path(), "2026-04-30-shopify-1t06474-3") {
+		t.Errorf("third run path = %q", s3.Path())
+	}
+
+	// Each directory exists separately on disk.
+	for _, s := range []*Session{s1, s2, s3} {
+		if _, err := os.Stat(s.Path()); err != nil {
+			t.Errorf("session dir %q missing: %v", s.Path(), err)
+		}
+	}
+}
+
+func TestNewSessionPriorRunArtifactsPreserved(t *testing.T) {
+	// Concrete check on the bug Codex flagged: write an artifact in the
+	// first session, then create a second session with same args, then
+	// confirm the first session's artifact is intact.
+	root := t.TempDir()
+	now := time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC)
+
+	s1, _ := NewSession(root, "x", "abc", now)
+	if err := s1.WriteJSON("drafts.json", map[string]string{"run": "first"}); err != nil {
+		t.Fatal(err)
+	}
+
+	s2, err := NewSession(root, "x", "abc", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s2.WriteJSON("drafts.json", map[string]string{"run": "second"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Read s1's drafts.json — should still say "first".
+	data, err := os.ReadFile(filepath.Join(s1.Path(), "drafts.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"first"`) {
+		t.Errorf("first session's drafts.json overwritten: %s", string(data))
+	}
+}
+
 func TestWriteJSONRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	s, err := NewSession(root, "test", "x1", time.Now())

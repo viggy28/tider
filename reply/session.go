@@ -42,6 +42,11 @@ type Session struct {
 // consistent across case-insensitive filesystems and Reddit's case-
 // preserved URLs.
 //
+// Re-runs against the same thread on the same day get a numeric suffix
+// (-2, -3, ...) so subsequent runs don't silently overwrite prior
+// artifacts. The first run is the unsuffixed slug so the common-case
+// path stays clean.
+//
 // PostID is required (without it the directory wouldn't be unique to a
 // thread). An empty sub is allowed — slot becomes "unknown" — because
 // short-link parses don't carry the sub upfront.
@@ -54,12 +59,29 @@ func NewSession(root string, sub, postID string, now time.Time) (*Session, error
 	if s == "" {
 		s = "unknown"
 	}
-	slug := now.UTC().Format("2006-01-02") + "-" + s + "-" + strings.ToLower(postID)
-	dir := filepath.Join(root, slug)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("mkdir session: %w", err)
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return nil, fmt.Errorf("mkdir sessions root: %w", err)
 	}
-	return &Session{Dir: dir}, nil
+	base := now.UTC().Format("2006-01-02") + "-" + s + "-" + strings.ToLower(postID)
+
+	// Try the unsuffixed slug first; if it exists, append -2, -3, etc.
+	// os.Mkdir (not MkdirAll) fails atomically when the dir exists, which
+	// avoids a TOCTOU race between Stat and create.
+	for i := 0; i < 1000; i++ {
+		candidate := base
+		if i > 0 {
+			candidate = fmt.Sprintf("%s-%d", base, i+1)
+		}
+		dir := filepath.Join(root, candidate)
+		err := os.Mkdir(dir, 0o755)
+		if err == nil {
+			return &Session{Dir: dir}, nil
+		}
+		if !os.IsExist(err) {
+			return nil, fmt.Errorf("mkdir session: %w", err)
+		}
+	}
+	return nil, fmt.Errorf("session: too many existing dirs for slug %q (gave up after 1000)", base)
 }
 
 // Path returns the absolute session directory.
