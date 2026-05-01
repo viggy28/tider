@@ -77,6 +77,25 @@ func TestDetectModeReviewClassifier(t *testing.T) {
 	}
 }
 
+func TestDetectModeReviewExtractsBareHostname(t *testing.T) {
+	const resp = `{"mode":"review","reason":"OP asks for store critique and mentions a domain","target_urls":[]}`
+	p := &fakeProvider{name: "fake", response: resp}
+	thread := &types.Thread{
+		Subreddit: "ecommerce",
+		Title:     "New coffee store — 1% conversion",
+		Flair:     "Review my Store",
+		Body:      "Can someone critique my store?\n\nNovarocoffee.com",
+	}
+
+	res, err := DetectMode(context.Background(), p, "gpt-4o-mini", thread, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.TargetURLs) != 1 || res.TargetURLs[0] != "https://novarocoffee.com" {
+		t.Fatalf("target_urls = %v, want normalized bare hostname", res.TargetURLs)
+	}
+}
+
 func TestDetectModeMergesExtractedURLs(t *testing.T) {
 	// LLM returns one URL; body has another not mentioned by the model.
 	// Both should appear in the merged result, model's first.
@@ -189,7 +208,8 @@ func TestExtractURLsBasicShapes(t *testing.T) {
 		OutboundURL: "https://outbound.example.com/post",
 		Body: `markdown link: [my shop](https://shop.example.com)
 raw url: https://docs.example.com/guide
-also a deep link https://blog.example.com/2026/04/post.html`,
+also a deep link https://blog.example.com/2026/04/post.html
+bare domain: Novarocoffee.com`,
 	}
 	urls := extractURLs(thread)
 	want := []string{
@@ -197,6 +217,31 @@ also a deep link https://blog.example.com/2026/04/post.html`,
 		"https://shop.example.com",
 		"https://docs.example.com/guide",
 		"https://blog.example.com/2026/04/post.html",
+		"https://novarocoffee.com",
+	}
+	if len(urls) != len(want) {
+		t.Fatalf("got %v, want %v", urls, want)
+	}
+	for i, w := range want {
+		if urls[i] != w {
+			t.Errorf("position %d: got %q, want %q", i, urls[i], w)
+		}
+	}
+}
+
+func TestExtractURLsBareHostnameFilters(t *testing.T) {
+	thread := &types.Thread{
+		Body: `email support@example.com
+reddit mention reddit.com/r/ecommerce
+image sample cdn.example.com/photo.jpg
+store Novarocoffee.com.
+already linked https://shop.example.com/path`,
+	}
+
+	urls := extractURLs(thread)
+	want := []string{
+		"https://novarocoffee.com",
+		"https://shop.example.com/path",
 	}
 	if len(urls) != len(want) {
 		t.Fatalf("got %v, want %v", urls, want)
