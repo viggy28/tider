@@ -37,11 +37,26 @@ const inspectUserAgent = "tider/0.1 (review-mode inspection; contact /u/tider28)
 //   - Otherwise → InspectHTML. stdlib + x/net/html, text-only signal.
 //     Inspection.Source = "html".
 //
-// Both return *types.Inspection with the same shape; downstream steps
-// (review notes, drafter) read whatever's present.
+// If Firecrawl is configured but its call fails (transient outage,
+// invalid key, quota/rate-limit error), Inspect emits a warning and
+// falls back to InspectHTML so review mode still produces usable notes
+// instead of hard-failing the whole reply pipeline. The fallback is
+// surfaced on stderr so users can tell their key isn't being honored.
+//
+// Both backends return *types.Inspection with the same shape;
+// downstream steps (review notes, drafter) read whatever's present.
 func Inspect(ctx context.Context, client *http.Client, target string) (*types.Inspection, error) {
 	if key := strings.TrimSpace(os.Getenv("FIRECRAWL_API_KEY")); key != "" {
-		return InspectFirecrawl(ctx, client, key, target)
+		insp, err := InspectFirecrawl(ctx, client, key, target)
+		if err == nil {
+			return insp, nil
+		}
+		// Don't fall back if the user canceled — a context error means
+		// the operator wants out, not a degraded retry.
+		if ctx.Err() != nil {
+			return nil, err
+		}
+		fmt.Fprintf(os.Stderr, "warning: Firecrawl inspection failed (%v); falling back to HTML inspection (no screenshot/images)\n", err)
 	}
 	return InspectHTML(ctx, client, target)
 }

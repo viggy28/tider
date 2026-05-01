@@ -78,10 +78,54 @@ func ParseThreadURL(raw string) (sub, postID string, err error) {
 	}
 }
 
+// Canonicalize returns a Reddit URL in a form that ParseThreadURL can
+// consume. URLs that ParseThreadURL already handles (canonical
+// /r/<sub>/comments/<id>/... and redd.it short links) are returned
+// unchanged with no network I/O.
+//
+// Reddit's mobile app share links — https://www.reddit.com/s/<token> —
+// are an opaque form: the token isn't a post id, just a redirect handle.
+// Pasting one to `tider reply --url=...` is common (it's what "Share" in
+// the app produces), so this helper follows the 30x redirect to reach
+// the canonical /r/<sub>/comments/<id>/... URL before parsing.
+//
+// Errors from the redirect lookup are surfaced as-is. Non-share URLs
+// pass through even if they later fail ParseThreadURL — letting that
+// function surface the better shape error.
+func Canonicalize(ctx context.Context, client *http.Client, raw string) (string, error) {
+	if raw == "" {
+		return raw, nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw, nil
+	}
+	host := strings.ToLower(u.Host)
+	host = strings.TrimPrefix(host, "www.")
+	host = strings.TrimPrefix(host, "old.")
+	host = strings.TrimPrefix(host, "np.")
+	host = strings.TrimPrefix(host, "new.")
+	if host != "reddit.com" {
+		return raw, nil
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) >= 2 && parts[0] == "s" && parts[1] != "" {
+		// Mobile share link — follow the redirect using the same one-shot
+		// redirect logic as ResolveShortLink (the function is generic;
+		// the name reflects redd.it being the original use case).
+		return ResolveShortLink(ctx, client, raw)
+	}
+	return raw, nil
+}
+
 // ResolveShortLink follows a redd.it/<id> URL to its canonical reddit.com
 // thread URL. Useful when you want the subreddit name without fetching
 // the full thread first; not strictly required because /comments/<id>.json
 // works regardless of subreddit, but handy for printing canonical URLs.
+//
+// Also used by Canonicalize for mobile share URLs (/s/<token>): the
+// underlying logic is just "follow one redirect," so it works on any
+// URL Reddit serves with a 30x + Location header.
 //
 // HTTP client should not auto-follow redirects when calling this — we
 // look at the Location header from the first response.

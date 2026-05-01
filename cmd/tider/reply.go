@@ -51,8 +51,16 @@ API key for the chosen provider must be set in the environment
 			return errors.New("--url is required")
 		}
 
-		// 1. Parse URL.
-		sub, postID, err := reddit.ParseThreadURL(replyURL)
+		// 1. Parse URL. Canonicalize first so Reddit mobile share links
+		//    (https://www.reddit.com/s/<token>, common when pasting from
+		//    the Reddit app's Share menu) get resolved to a canonical
+		//    /r/<sub>/comments/<id>/... URL before parsing.
+		ctx := context.Background()
+		canonURL, err := reddit.Canonicalize(ctx, &http.Client{Timeout: 15 * time.Second}, replyURL)
+		if err != nil {
+			return fmt.Errorf("resolve url: %w", err)
+		}
+		sub, postID, err := reddit.ParseThreadURL(canonURL)
 		if err != nil {
 			return fmt.Errorf("parse url: %w", err)
 		}
@@ -64,7 +72,6 @@ API key for the chosen provider must be set in the environment
 		}
 		cacheRoot := filepath.Join(home, ".tider", "cache")
 		client := reddit.NewClient(reddit.NewCache(cacheRoot))
-		ctx := context.Background()
 		thread, err := client.FetchThread(ctx, sub, postID)
 		if err != nil {
 			return err
