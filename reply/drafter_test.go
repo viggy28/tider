@@ -13,6 +13,7 @@ func sampleDraftInput() *DraftInput {
 	return &DraftInput{
 		Thread: &types.Thread{
 			Subreddit: "shopify",
+			Flair:     "Marketing",
 			Title:     "best plugins for performance?",
 			Body:      "Looking for plugin recs to speed up the cart.",
 			URL:       "https://www.reddit.com/r/shopify/comments/abc/best/",
@@ -26,10 +27,9 @@ func sampleDraftInput() *DraftInput {
 
 const goodDrafterResp = `{
   "drafts": [
-    {"id":"best","label":"best","text":"Best draft text.","reasoning":"concise + actionable"},
-    {"id":"short","label":"short","text":"Short text.","reasoning":"shortest viable"},
-    {"id":"detailed","label":"detailed","text":"Detailed text.","reasoning":"more depth"},
-    {"id":"question-first","label":"question-first","text":"What kind of cart?","reasoning":"need more info"}
+    {"id":"best","label":"best","text":"Best draft text.","reasoning":"one sharp frame for solo store owner"},
+    {"id":"short","label":"short","text":"Short text.","reasoning":"shortest viable answer"},
+    {"id":"thread-aware","label":"thread-aware","text":"Engaging the batching pushback.","reasoning":"top comment's batching critique deserves a response"}
   ],
   "pick_id": "best"
 }`
@@ -43,8 +43,17 @@ func TestGenerateReplyHappyPath(t *testing.T) {
 	if bundle.Subreddit != "shopify" || bundle.Mode != types.ReplyModeReply {
 		t.Errorf("bundle metadata: %+v", bundle)
 	}
-	if len(bundle.Drafts) != 4 {
-		t.Errorf("drafts len = %d", len(bundle.Drafts))
+	if len(bundle.Drafts) != 3 {
+		t.Errorf("drafts len = %d (expected 3 for new variant model)", len(bundle.Drafts))
+	}
+	gotLabels := map[string]bool{}
+	for _, d := range bundle.Drafts {
+		gotLabels[d.Label] = true
+	}
+	for _, want := range []string{"best", "short", "thread-aware"} {
+		if !gotLabels[want] {
+			t.Errorf("missing variant %q in bundle", want)
+		}
 	}
 	if bundle.PickID != "best" {
 		t.Errorf("pick = %q", bundle.PickID)
@@ -115,22 +124,77 @@ func TestRenderReplyPromptIncludesContextAndAuthor(t *testing.T) {
 	}
 	checks := []string{
 		"r/shopify",
+		"Flair: Marketing",                   // flair threaded through (new)
 		"best plugins for performance?",
 		"Looking for plugin recs",
-		"alice", "Try X", // top comment leaked in
+		"alice", "Try X",                     // top comment leaked in
 		"Who you're writing as",
 		"Five years running Postgres",
+		"voice and judgment only",            // author_context redefined as voice-only
 		"Context (project material",
 		"From bank (kova)",
 		"From path",
 		"kova body content",
 		"notes body",
 		"Do not name or pitch the project",
+		"lens, not a topic",                  // context-as-lens guidance
+		"Sub-category inference",             // abstract category guidance, not named-sub list
+		"thread-aware",                       // new variant slot
+		"personal-story",                     // new variant slot
+		"Fabricate first-person experience",  // explicit ban on fake autobiography
+		"Repeat the consensus",               // engage-don't-duplicate rule
 		"Anti-tells",
 	}
 	for _, s := range checks {
 		if !strings.Contains(prompt, s) {
 			t.Errorf("prompt missing %q\n--- prompt ---\n%s", s, prompt)
+		}
+	}
+}
+
+// Flair is conditional: it must appear in the rendered prompt only when
+// Thread.Flair is non-empty. Empty flair should not produce a stray
+// "Flair: " line.
+func TestRenderReplyPromptOmitsFlairLineWhenEmpty(t *testing.T) {
+	input := sampleDraftInput()
+	input.Thread.Flair = ""
+
+	prompt, err := RenderReplyPrompt(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(prompt, "Flair:") {
+		t.Errorf("empty Flair should not render a Flair: line\n--- prompt ---\n%s", prompt)
+	}
+	// Subreddit line still renders.
+	if !strings.Contains(prompt, "Subreddit: r/shopify") {
+		t.Error("Subreddit line should still render even when flair is empty")
+	}
+}
+
+// The new prompt forbids hardcoded named-subreddit category lookups.
+// Sub-category inference comes from Subreddit + Flair + body, described
+// abstractly. Catching the regression of a "named subs" list slipping
+// back in: assert that example sub names from the spec body do NOT
+// appear in the rendered prompt.
+func TestRenderReplyPromptDoesNotEnumerateNamedSubs(t *testing.T) {
+	input := sampleDraftInput()
+	prompt, err := RenderReplyPrompt(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bannedExamples := []string{
+		"r/EtsySellers",
+		"r/ecommerce",
+		"r/Entrepreneur",
+		"r/marketing",
+		"r/PostgreSQL",
+		"r/kubernetes",
+		"r/sysadmin",
+	}
+	for _, b := range bannedExamples {
+		if strings.Contains(prompt, b) {
+			t.Errorf("prompt should not enumerate named subs (%q found) — sub-category inference must come from category descriptions", b)
 		}
 	}
 }

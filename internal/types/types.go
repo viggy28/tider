@@ -294,9 +294,14 @@ type LoadedReplyContext struct {
 }
 
 // ReplyDraft is one variant produced by the reply drafter.
+//
+// Common labels: "best", "short", "thread-aware", "personal-story",
+// "question-first", "detailed". Not exhaustive — labels are free-form
+// strings on the wire so the prompt can evolve without a schema change.
+// The renderer title-cases hyphenated labels for display.
 type ReplyDraft struct {
 	ID        string `json:"id"`
-	Label     string `json:"label"` // "best" | "short" | "detailed" | "question-first"
+	Label     string `json:"label"`
 	Text      string `json:"text"`
 	Reasoning string `json:"reasoning,omitempty"`
 }

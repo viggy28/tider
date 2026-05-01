@@ -16,7 +16,8 @@ func sampleBundle() *types.ReplyBundle {
 		Drafts: []types.ReplyDraft{
 			{ID: "best", Label: "best", Text: "Best reply text here.", Reasoning: "concise + fits sub"},
 			{ID: "short", Label: "short", Text: "Short text.", Reasoning: "shortest viable"},
-			{ID: "detailed", Label: "detailed", Text: "Detailed text with more depth.", Reasoning: "for thorough threads"},
+			{ID: "thread-aware", Label: "thread-aware", Text: "Engages the batching pushback.", Reasoning: "top comment counterpoint"},
+			{ID: "personal-story", Label: "personal-story", Text: "Story-shaped reply.", Reasoning: "uses one-person handmade shop story from personal.md"},
 			{ID: "question-first", Label: "question-first", Text: "What's your stack?", Reasoning: "need more info"},
 		},
 		PickID:    "best",
@@ -48,7 +49,8 @@ func TestRenderMarkdownBestPickLeads(t *testing.T) {
 		"### Short",
 		"*shortest viable*",                    // alt reasoning as italic
 		"Short text.",
-		"### Detailed",
+		"### Thread-Aware",                     // new variant, hyphenated label title-cased
+		"### Personal-Story",                   // new variant, hyphenated label title-cased
 		"### Question-First",                   // hyphenated label title-cased
 		"What's your stack?",
 	}
@@ -88,7 +90,7 @@ func TestRenderMarkdownPickIDNotInDrafts(t *testing.T) {
 	if !strings.Contains(md, "## Alternatives") {
 		t.Error("Alternatives should still render")
 	}
-	for _, want := range []string{"### Best", "### Short", "### Detailed", "### Question-First"} {
+	for _, want := range []string{"### Best", "### Short", "### Thread-Aware", "### Personal-Story", "### Question-First"} {
 		if !strings.Contains(md, want) {
 			t.Errorf("alternative %q should still render", want)
 		}
@@ -105,6 +107,8 @@ func TestTitleCaseLabel(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"best", "Best"},
 		{"short", "Short"},
+		{"thread-aware", "Thread-Aware"},
+		{"personal-story", "Personal-Story"},
 		{"question-first", "Question-First"},
 		{"long-multi-part", "Long-Multi-Part"},
 		{"", ""},
