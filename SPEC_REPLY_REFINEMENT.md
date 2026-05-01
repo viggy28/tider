@@ -20,7 +20,7 @@ Observed example: a Shopify thread where the OP is a solo store owner burned out
 - track funnel metrics
 - hire a part-time editor
 
-Most of that advice is plausible, but the result reads like a generic marketing consultant checklist. It repeats what the thread already contains, especially "pick one platform" and "repurpose content." It also produced a `detailed` variant that was longer rather than more differentiated.
+Most of that advice is plausible, but the result reads like a generic marketing consultant checklist. It repeats what the thread already contains, especially "pick one platform" and "repurpose content." It also produced too many bullets and a `detailed` variant that was longer rather than more differentiated.
 
 The strongest context-specific insight from Kova was weaker than it should have been:
 
@@ -66,7 +66,33 @@ No `draft comment` phrase should appear in user-facing product copy.
 
 ## Core design shift
 
-Replace the default `detailed` variant with angle-based variants.
+Replace the default `detailed` variant with a compact postable format:
+
+```text
+Best Pick
+
+<ready-to-post comment>
+
+Alternative Picks
+
+Shorter
+
+<shorter ready-to-post comment>
+
+Counterpoint
+
+<contrarian/minority/thread-aware angle, if useful>
+
+Warmer / Personal
+
+<personal-context version, only if relevant>
+
+Question
+
+<question-first version, only if needed>
+```
+
+No reasoning or editing notes should render by default. The output should feel like a set of comments the user can quickly choose from and edit, not a report about the comments. Reasoning is still recorded in `drafts.json` for audit/debug.
 
 ### Old variant model
 
@@ -82,19 +108,18 @@ The problem: `detailed` is a length variant. It often creates a longer checklist
 ### New variant model
 
 ```text
-best
-short
-thread-aware
-personal-story, if supported
-question-first, if needed
-detailed, only if the OP explicitly asks for a plan, diagnosis, technical steps, or multi-part answer
+best               -> rendered as "Best Pick"
+shorter            -> rendered as "Shorter"
+counterpoint       -> rendered as "Counterpoint"
+warmer-personal    -> rendered as "Warmer / Personal", only when supported
+question           -> rendered as "Question", only when needed
 ```
 
-The model does not have to output every variant. Three strong variants are better than four padded ones.
+The model does not have to output every variant. Two to four strong drafts are better than a full menu. `Detailed` is removed entirely — there is no `detailed` slot and no `Technical Steps` slot in v1. Technical/troubleshooting threads can make `best` longer when concrete detail is necessary.
 
 ## Variant definitions
 
-### `best`
+### `best` / `Best Pick`
 
 The recommended reply. It should be the comment the user is most likely to post.
 
@@ -104,27 +129,30 @@ Properties:
 - specific
 - directly useful to the OP
 - grounded in OP + top comments + supplied context
-- usually 120-220 words for business/community subs
+- usually 120-180 words for business/community subs
 - can be shorter if the answer is obvious
+- defaults to short paragraphs, not bullets
+- can be a counterpoint-style reply if that is the strongest version
 
 For the Shopify burnout example, `best` should focus on one sharp frame:
 
 > Build a repeatable proof-capture loop, not a bigger content calendar.
 
-### `short`
+### `shorter` / `Shorter`
 
 The shortest viable reply.
 
 Properties:
 
-- one paragraph or a few bullets
+- usually one paragraph
 - 40-90 words in most non-technical threads
 - no setup, no throat-clearing
 - preserves the core advice from `best`
+- no bullet list unless one or two bullets materially improve readability
 
-### `thread-aware`
+### `counterpoint` / `Counterpoint`
 
-Reacts to something important already present in comments.
+Offers a contrarian, minority, or thread-aware angle when useful.
 
 This is the replacement for most `detailed` output in Reddit-style business/trade/community subs.
 
@@ -133,19 +161,20 @@ Purpose:
 - add a missing nuance
 - resolve tension between top comments
 - push back on advice that is directionally right but incomplete
+- represent a useful minority POV
 - avoid repeating the same consensus comment
 
-For the Shopify burnout example, the useful counter-comment was that batching can fail because it still requires creative energy on demand. A good `thread-aware` variant should engage that:
+**Distinct-frame rule.** If `best` is itself counterpoint-flavored, `counterpoint` MUST take a different contrarian/minority angle. If no different angle exists, skip the slot — do not duplicate the `best` frame.
+
+For the Shopify burnout example, the useful counter-comment was that batching can fail because it still requires creative energy on demand. A good `counterpoint` variant should engage that:
 
 ```text
-I agree with the "pick one platform" advice, but I would be careful with generic batching. Batching only works if the task is capture, not creativity.
+I would be careful with the idea that the answer is just "be more consistent."
 
-Instead of sitting down to invent content, keep a repeatable proof-shot list: product in hand for scale, close-up texture, quick use/demo, packing an order, and one process clip. Film those whenever you already have the product out. Then on busy weeks you are assembling from a small clip library, not trying to be creative from zero.
-
-That is the difference between a content calendar and content inventory.
+Consistency matters, but if the system depends on you constantly inventing content, it will break every time the shop gets busy. I would optimize for reusable proof instead: film simple clips while the work is already happening — scale, texture, demo, packing, process — and build a small library you can pull from.
 ```
 
-### `personal-story`
+### `warmer-personal` / `Warmer / Personal`
 
 Uses a personal anecdote from `author_context` or supplied contexts only when it clearly fits.
 
@@ -174,7 +203,7 @@ I have seen this up close with a one-person handmade shop: the useful content us
 
 Use "my mom" only if the context explicitly allows personal/family framing or the user requests a personal version.
 
-### `question-first`
+### `question` / `Question`
 
 Use only when more information is required before useful advice is possible.
 
@@ -189,20 +218,11 @@ Bad uses:
 - OP is venting and already has enough context for a useful lightweight answer
 - the question is a disguised invitation to write a mini-consulting plan
 
-### `detailed`
+### No `detailed` by default
 
-Not a default variant.
+Do not generate a `detailed` slot. The variant is removed from the prompt's variant list entirely.
 
-Use only when the OP explicitly asks for:
-
-- step-by-step plan
-- technical troubleshooting
-- implementation details
-- multi-part critique
-- code/config/database/API diagnosis
-- structured store review
-
-If produced, `detailed` must still be concise for the subreddit. It should not be a 10-step playbook unless the OP asked for one.
+For technical/troubleshooting threads, allow more detail inside `Best Pick` when needed. If a separate technical variant is needed in the future, a specific label such as `Technical Steps` can be added then — not a generic `Detailed`.
 
 ## Subreddit-aware behavior
 
@@ -210,13 +230,11 @@ The prompt should infer thread/subreddit style and choose variants accordingly.
 
 ### Signals available to the drafter
 
-The drafter prompt should classify thread style from three signals on the OP, all of which are already fetched and stored in `thread.json`:
+The drafter prompt should classify thread style from three signals on the OP, all already fetched and stored in `thread.json`:
 
-- **Subreddit name** — already passed through to the drafter prompt as `Subreddit: r/{{.Subreddit}}`.
-- **Flair** — currently fetched and stored in `thread.json` (e.g. `"flair": "Marketing"`) and passed to the *mode classifier*, but **not threaded into the drafter prompt today**. This needs fixing as part of this spec: the drafter often has to disambiguate similar subs (`r/Entrepreneur` with flair `Technical Question` vs `Marketing` vs `Personal`) and flair is the fastest signal for that.
+- **Subreddit name** — passed through to the drafter prompt as `Subreddit: r/{{.Subreddit}}`.
+- **Flair** — already threaded through to the drafter (PR #19) and rendered as `Flair: {{.Flair}}` when non-empty.
 - **OP body** — already in the prompt.
-
-Flair must be added to the drafter template inputs so the model can use it for both category inference and tone calibration. When flair is empty or absent, the drafter falls back to subreddit + body.
 
 ### Business, trade, marketing, ecommerce, founder, community subs
 
@@ -231,10 +249,10 @@ Examples:
 Default behavior:
 
 - produce `best`
-- produce `short`
-- prefer `thread-aware`
-- produce `personal-story` only if supported and relevant
-- skip `detailed` unless OP explicitly asks for a plan
+- produce `shorter`
+- prefer `counterpoint` when top comments reveal a repeated pattern, missing nuance, or useful disagreement
+- produce `warmer-personal` only if supported and relevant
+- skip generic `detailed`
 
 Target tone:
 
@@ -255,10 +273,10 @@ Examples:
 
 Default behavior:
 
-- `detailed` may be useful
 - answer with concrete steps, tradeoffs, commands, configs, or diagnostics
-- `thread-aware` is still useful when top comments reveal a misconception
-- avoid personal-story unless credibility matters and is concise
+- allow `Best Pick` to be longer when concrete detail is necessary
+- `counterpoint` is still useful when top comments reveal a misconception
+- avoid `warmer-personal` unless credibility matters and is concise
 
 ### Review/feedback posts
 
@@ -271,7 +289,16 @@ Default behavior:
 - no generic reply if inspection fails
 - do not trigger review mode from comments
 
-This spec does not change review-mode implementation.
+This spec does not change review-mode inspection. **It does** align review-mode variant labels for consistency: `short` → `shorter`, `question-first` → `question`. Review mode keeps its review-specific slots:
+
+```text
+best
+shorter
+structured-review
+question
+```
+
+No `counterpoint` or `warmer-personal` for review mode by default.
 
 ## Context semantics
 
@@ -311,13 +338,6 @@ Use:
 
 If `author_context` and `--context` disagree about the user's current project, `--context` wins for subject matter and `author_context` remains voice-only.
 
-Example:
-
-- config says Streambed
-- command passes `--context=kova`
-
-The reply must not mention Streambed unless the Reddit thread is about Streambed-like work.
-
 ### Mom story rule
 
 The mom story is valuable, but should be optional.
@@ -345,8 +365,6 @@ Avoid it when:
 - the reply already works without personal framing
 
 ## Prompt rules
-
-The reply prompt should add or strengthen these rules.
 
 ### Use context as a lens
 
@@ -385,6 +403,12 @@ For the Shopify example:
 - useful counterpoint: batching still requires creative energy
 - sharper reply: capture inventory, not content calendar
 
+### Counterpoint slot rule
+
+If top comments contain a repeated pattern, missing nuance, or contrarian POV worth surfacing, generate `counterpoint` to engage it; otherwise skip `counterpoint`.
+
+If `best` is itself counterpoint-flavored, `counterpoint` MUST take a different contrarian/minority angle. No duplicate frame.
+
 ### Ban unsupported first-person claims
 
 Never write:
@@ -405,51 +429,68 @@ I have seen this up close with a one-person handmade shop...
 
 only if the context includes that story and the thread fits.
 
+### Bullet rule
+
+Default to short paragraphs, not bullets. Use bullets only when they materially improve readability — typically when listing 3+ short, parallel items the reader would scan rather than read.
+
+Single-bullet "lists" are anti-patterns. Bulleted operating-manual-style replies are anti-patterns.
+
 ### Word-count guidance
 
 Default caps for non-technical reply mode:
 
-- `best`: 120-220 words
-- `short`: 40-90 words
-- `thread-aware`: 90-180 words
-- `personal-story`: 90-180 words
-- `question-first`: 30-80 words
-- `detailed`: skip unless needed; if included, 250-400 words max unless OP explicitly asked for more
+- `best`: 120-180 words
+- `shorter`: 40-90 words
+- `counterpoint`: 80-160 words
+- `warmer-personal`: 70-140 words
+- `question`: 30-80 words
 
 Technical/troubleshooting threads may exceed these caps when concrete detail is necessary.
 
 ## Output rendering
 
-Current renderer sections:
+Target rendered markdown:
 
 ```text
-Best Pick
-Alternatives
+# Reply drafts for r/<subreddit>
+
+Thread: <thread title>
+Mode: <reply|review>
+Session: <session path>
+
+## Best Pick
+
+<ready-to-post comment>
+
+## Alternative Picks
+
+### Shorter
+
+<shorter ready-to-post comment>
+
+### Counterpoint
+
+<contrarian/minority/thread-aware angle, if useful>
+
+### Warmer / Personal
+
+<personal-context version, only if relevant>
+
+### Question
+
+<question-first version, only if needed>
 ```
 
-This can stay, but labels should become meaningful:
+Rendering rules:
 
-- `Short`
-- `Thread-Aware`
-- `Personal Story`
-- `Question First`
-- `Detailed`
-
-`Detailed` should not appear unless generated.
-
-Alternative reasoning should describe the angle, not the length:
-
-Good:
-
-```text
-Engages the batching pushback in the comments and reframes the work as capture inventory.
-```
-
-Bad:
-
-```text
-Provides a step-by-step operating model with concrete tools.
-```
+- No `Why this works`.
+- No reasoning under variants in markdown. Reasoning is preserved in `drafts.json` for audit only.
+- No `Editing Notes`.
+- No `Detailed` by default.
+- Use `## Alternative Picks`, not `## Alternatives`.
+- Render only variants that exist.
+- Keep default output to 2-4 drafts total.
+- Use bullets only when they make the comment easier to read; default to short paragraphs.
 
 ## Ideal output for the Shopify example
 
@@ -462,35 +503,33 @@ tider reply --url=<shopify marketing burnout thread> --context=kova --context=pe
 The recommended `best` reply should resemble:
 
 ```text
-I would make the content system smaller than "be active on every platform."
+I agree with the "pick one platform" advice, but I would separate capture from creativity.
 
-For a solo store, the hard part is not just scheduling posts. It is having repeatable raw material that proves the product is real and worth buying. I would pick one source channel, then build a simple shot list you can reuse every time: product in hand for scale, texture close-up, quick use/demo, packing an order, and one process/maker clip.
+Batching content can still burn you out if it means sitting down and inventing ideas on demand. What works better is building a small footage library while you are already doing normal shop work: product in hand for scale, texture close-up, quick demo, packing an order, process shot, maybe a common question answered with text overlay.
 
-That gives you enough footage to repurpose into reels, pins, product-page clips, and posts without inventing new ideas every day.
+Then on busy weeks, you are assembling from real clips instead of starting from zero.
 
-Also, do not over-polish it. If the product is clear, garage/process footage can work because buyers are often looking for trust: is this real, does it look like the photos, who is behind it?
-
-So I would optimize for a repeatable proof-capture loop, not a bigger content calendar.
+Also, do not over-worry about the garage look. If the product is clear and the footage feels real, that can build more trust than a polished studio-style post.
 ```
 
-The `thread-aware` variant should resemble:
+The `shorter` variant should resemble:
 
 ```text
-I agree with the "pick one platform" advice, but I would be careful with generic batching. Batching only works if the task is capture, not creativity.
-
-Instead of sitting down to invent content, keep a repeatable proof-shot list: product in hand for scale, close-up texture, quick use/demo, packing an order, and one process clip. Film those whenever you already have the product out. Then on busy weeks you are assembling from a small clip library, not trying to be creative from zero.
-
-That is the difference between a content calendar and content inventory.
+Do not try to become a full-time creator. Build a small footage library while doing normal shop work: scale, texture, demo, packing, process. Then reuse those clips on one main channel and repost elsewhere. The goal is to stop inventing content from zero every week.
 ```
 
-The `personal-story` variant, if produced, should resemble:
+The `counterpoint` variant should resemble:
 
 ```text
-I have seen this up close with a one-person handmade shop: the content burden gets heavy fast, but the useful clips usually were not polished. They were simple proof that the product was real: product in hand for scale, texture, packing, and process.
+I would be careful with the idea that the answer is just "be more consistent."
 
-I would not try to run four separate content calendars. I would build one small capture loop: film the same five proof shots whenever the product is already out, then reuse those clips across whichever channel is actually bringing buyers.
+Consistency matters, but if the system depends on you constantly inventing content, it will break every time the shop gets busy. I would optimize for reusable proof instead: film simple clips while the work is already happening — scale, texture, demo, packing, process — and build a small library you can pull from.
+```
 
-That keeps the work closer to running the shop instead of becoming a full-time creator.
+The `warmer-personal` variant, if produced, should resemble:
+
+```text
+I have seen this up close with a one-person handmade shop. The useful content usually was not polished; it was simple proof that the product was real: scale, texture, packing, process. I would build around that instead of trying to run four separate content calendars.
 ```
 
 ## Implementation plan
@@ -501,50 +540,44 @@ Files:
 
 ```text
 prompts/reply.tmpl
-reply/drafter.go
-```
-
-Changes to `prompts/reply.tmpl`:
-
-- replace the variant list with the new angle-based model
-- make `detailed` conditional
-- add subreddit-aware guidance
-- reference `{{.Flair}}` alongside `{{.Subreddit}}` in the thread header (rendered conditionally so empty flair doesn't print "Flair: ")
-- add thread-aware instructions based on top comments
-- add personal-story rules
-- add stronger first-person claim ban
-- add word-count guidance
-- clarify `author_context` vs context-bank roles
-
-Changes to `reply/drafter.go`:
-
-- add `Flair string` to the anonymous struct passed to `replyTmpl.Execute` in `renderReplyPrompt`
-- populate it from `input.Thread.Flair` (the field already exists on `types.Thread`)
-
-This is the gap noted in *Signals available to the drafter*: the data is already on the type, just not threaded through to the drafter template.
-
-### 2. Update tests
-
-Files:
-
-```text
-reply/drafter_test.go
-reply/render_test.go
 ```
 
 Changes:
 
-- update happy-path fake response to include `thread-aware`
-- add prompt-render test assertions for:
-  - `thread-aware`
-  - `personal-story`
-  - `detailed` conditionality
-  - unsupported first-person claim ban
-  - context-as-lens guidance
-  - `Flair: <value>` line appears in the rendered prompt when `Thread.Flair` is non-empty, and is omitted otherwise
-- ensure renderer title-cases labels like `thread-aware` and `personal-story`
+- replace the variant list with the new angle-based model (best, shorter, counterpoint, warmer-personal, question)
+- remove the `detailed` slot entirely from the JSON output schema
+- add the bullet-soft-rule
+- add the counterpoint distinct-frame rule
+- update word-count guidance
+- preserve existing rules: first-person ban, context-as-lens, voice-only author_context, anti-tells
+- update the JSON output example with new variant IDs
 
-### 3. Update type comments
+### 2. Update review prompt for label alignment
+
+File:
+
+```text
+prompts/review.tmpl
+```
+
+Rename `short` → `shorter` and `question-first` → `question` so review-mode and reply-mode share the same labels for the analogous slots. Review mode keeps `structured-review` as its review-specific slot.
+
+### 3. Update renderer
+
+File:
+
+```text
+reply/render.go
+```
+
+- displayLabel map: add new IDs (shorter, counterpoint, warmer-personal, question) with their spec-mandated display forms
+- Section header: `## Alternatives` → `## Alternative Picks`
+- Drop the `> reasoning` blockquote on best-pick rendering
+- Drop the `*reasoning*` italic on alternative rendering
+- Keep markdown heading hierarchy (`# `, `## `, `### `)
+- Old IDs (short, thread-aware, personal-story, question-first, detailed) fall through to the kebab-fallback path; no special backward-compat handling
+
+### 4. Update type comments
 
 File:
 
@@ -552,30 +585,30 @@ File:
 internal/types/types.go
 ```
 
-Change the `ReplyDraft.Label` comment from:
+Update the `ReplyDraft.Label` comment to reflect the new common label set.
 
-```go
-// "best" | "short" | "detailed" | "question-first"
+### 5. Update tests
+
+Files:
+
+```text
+reply/drafter_test.go
+reply/render_test.go
+reply/review_test.go
 ```
 
-to:
+- drafter_test: update happy-path response to use new IDs (best, shorter, counterpoint)
+- drafter_test: prompt-render assertions for counterpoint / warmer-personal slot language, no-detailed, distinct-frame rule
+- render_test: sample bundle uses new IDs, assert `## Alternative Picks`, assert `### Shorter / Counterpoint / Warmer / Personal / Question`, assert reasoning is NOT present in markdown output
+- review_test: update happy-path response and any prompt assertions for the renamed `shorter` / `question` review variants
 
-```go
-// Common labels: "best", "short", "thread-aware", "personal-story",
-// "question-first", "detailed".
-```
-
-The data model does not need a schema change because IDs and labels are already strings.
-
-### 4. Manual verification
-
-Run:
+### 6. Manual verification
 
 ```text
 go test ./...
 ```
 
-Then re-run a known thread:
+Then re-run the Shopify burnout thread:
 
 ```text
 ./tider reply --url=https://www.reddit.com/r/shopify/comments/1sz012f/struggling_on_marketing_my_shopify_store/ --context=kova --context=personal
@@ -583,30 +616,30 @@ Then re-run a known thread:
 
 Expected:
 
-- no generic 10-step `Detailed` default
-- `Best Pick` is concise and Kova-shaped
-- `Thread-Aware` engages the batching/creative-energy counterpoint
-- `Personal Story` appears only if the model can use the one-person handmade shop context naturally
+- output sections are `## Best Pick` and `## Alternative Picks`
+- no `> reasoning` blockquote, no `*reasoning*` italic
+- no `Why this works` / `Editing Notes`
+- no `Detailed` slot
+- `Best Pick` is concise (<=180 words), Kova-shaped, postable
+- `Counterpoint` engages the batching/creative-energy counterpoint when present
+- `Warmer / Personal` appears only if the model can use the one-person handmade shop context naturally
 - no "I ran into the same wall" unless directly supported
 - no mention of Kova by name
-- no mention of Streambed
+- bullet usage limited to genuinely list-shaped material
 
 ## Acceptance criteria
 
 1. `tider reply` still returns valid JSON internally and markdown externally.
-2. Existing session artifacts continue to be written:
-   - `thread.json`
-   - `contexts.json`
-   - `mode.json`
-   - `draft-input.json`
-   - `drafts.json`
-   - `output.md`
-3. The default output for non-technical business/community threads no longer includes a long `Detailed` variant unless OP asked for a plan.
-4. At least one generated variant explicitly engages a high-signal comment or repeated thread pattern when such a pattern exists.
-5. Personal anecdotes are optional and grounded.
-6. `author_context` is treated as voice/background, not a competing project context.
-7. Context-bank project material influences advice without naming or pitching the project by default.
-8. The Shopify marketing-burnout example produces a sharper reply centered on repeatable product-proof capture.
+2. Existing session artifacts continue to be written: `thread.json`, `contexts.json`, `mode.json`, `draft-input.json`, `drafts.json`, `output.md`.
+3. The rendered markdown uses `## Best Pick` and `## Alternative Picks`.
+4. The rendered markdown does not include `> reasoning`, `*reasoning*`, `Why this works`, per-variant reasoning, or `Editing Notes`.
+5. The default output for non-technical business/community threads no longer includes a `Detailed` variant.
+6. Aside from `Shorter`, alternatives represent distinct POVs, not only longer/shorter rewrites.
+7. If top comments contain a repeated pattern, missing nuance, or contrarian POV worth surfacing, `Counterpoint` engages it; otherwise `Counterpoint` is skipped.
+8. Personal anecdotes are optional and grounded.
+9. `author_context` is treated as voice/background, not a competing project context.
+10. Context-bank project material influences advice without naming or pitching the project by default.
+11. The Shopify marketing-burnout example produces a sharper reply centered on repeatable product-proof capture.
 
 ## Future work
 
@@ -614,10 +647,11 @@ Expected:
 - Add session-based regeneration for a specific angle:
 
   ```text
-  tider reply regen --session=<path> --angle=thread-aware
+  tider reply regen --session=<path> --angle=counterpoint
   ```
 
 - Add lightweight subreddit profiles if prompt-only subreddit awareness is insufficient.
+- Add a `Technical Steps` review-mode-style slot for technical subs only if the longer-best-pick path proves insufficient.
 - Add context metadata later if prose conventions become unreliable:
 
   ```yaml

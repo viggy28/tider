@@ -102,9 +102,9 @@ func TestRenderReviewNotesPromptIncludesInspectionFields(t *testing.T) {
 const sampleReviewDrafts = `{
   "drafts": [
     {"id":"best","label":"best","text":"Specific review reply citing the meta description and h1.","reasoning":"balances praise + actionable critique"},
-    {"id":"short","label":"short","text":"Short review reply.","reasoning":"shortest viable"},
-    {"id":"detailed","label":"detailed","text":"Detailed multi-section review.","reasoning":"thread has substance"},
-    {"id":"question-first","label":"question-first","text":"Ask about pricing first.","reasoning":"open question is load-bearing"}
+    {"id":"shorter","label":"shorter","text":"Shorter review reply.","reasoning":"shortest viable"},
+    {"id":"structured-review","label":"structured-review","text":"What works:\nWhat I would fix:\nBiggest priority:","reasoning":"thread has substance and OP asked for critique"},
+    {"id":"question","label":"question","text":"Ask about pricing first.","reasoning":"open question is load-bearing"}
   ],
   "pick_id": "best"
 }`
