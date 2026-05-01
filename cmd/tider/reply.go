@@ -178,7 +178,7 @@ API key for the chosen provider must be set in the environment
 
 		case types.ReplyModeReview:
 			if len(modeResult.TargetURLs) == 0 {
-				return errors.New("review request detected, but no shop/site URL was found in the original post — pass --context with notes you want to base the reply on, rerun with --mode=reply for an ordinary reply, or wait for a thread that includes a target link")
+				return errors.New("review request detected, but no shop/site URL was found in the original post — rerun with --mode=reply for an ordinary reply, or use a thread that includes a target link")
 			}
 			// Save target.json before any potentially-failing step so the
 			// session preserves what we knew even if inspection fails.

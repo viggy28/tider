@@ -1,8 +1,8 @@
 // Package reply implements `tider reply` — drafting Reddit comment-style
 // replies in either of two internal modes:
 //
-//   - reply: normal discussion thread; draft from OP + selected comments
-//     + context.
+//   - reply: normal discussion thread; draft from OP, selected comments,
+//     and context.
 //   - review: OP asks for review/feedback/critique of a specific external
 //     resource; draft from OP + inspected target + context.
 //
@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"text/template"
 
@@ -34,9 +35,9 @@ const DefaultModeMaxTokens = 2048
 
 // DetectMode runs the LLM classifier against the OP-only inputs and
 // returns the resulting ModeResult. The classifier-supplied target URLs
-// are merged with URLs extracted from the body (markdown links + raw
-// URLs) plus the outbound URL, deduplicated, with reddit/image links
-// filtered out.
+// are merged with URLs extracted from the body (markdown links, raw
+// URLs, and bare hostnames) plus the outbound URL, deduplicated, with
+// reddit/image links filtered out.
 //
 // Errors fall into three buckets:
 //   - llm provider error → propagated
@@ -108,8 +109,9 @@ func renderModePrompt(t *types.Thread) (string, error) {
 //   - reddit.com / redd.it (would be the thread itself or other discussions)
 //   - common image extensions (.jpg/.png/.gif/.webp/.svg/.jpeg)
 var (
-	mdLinkRE = regexp.MustCompile(`\[[^\]]*\]\((https?://[^\s)]+)\)`)
-	rawURLRE = regexp.MustCompile(`https?://[^\s)\]>]+`)
+	mdLinkRE       = regexp.MustCompile(`\[[^\]]*\]\((https?://[^\s)]+)\)`)
+	rawURLRE       = regexp.MustCompile(`https?://[^\s)\]>]+`)
+	bareHostnameRE = regexp.MustCompile(`(?i)\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?:/[^\s)\]>]*)?`)
 )
 
 func extractURLs(t *types.Thread) []string {
@@ -117,13 +119,24 @@ func extractURLs(t *types.Thread) []string {
 	if t.OutboundURL != "" {
 		raw = append(raw, t.OutboundURL)
 	}
-	for _, m := range mdLinkRE.FindAllStringSubmatch(t.Body, -1) {
-		if len(m) > 1 {
-			raw = append(raw, m[1])
+
+	var bodyURLs []extractedURL
+	for _, m := range mdLinkRE.FindAllStringSubmatchIndex(t.Body, -1) {
+		if len(m) >= 4 {
+			bodyURLs = append(bodyURLs, extractedURL{pos: m[0], url: t.Body[m[2]:m[3]]})
 		}
 	}
-	for _, u := range rawURLRE.FindAllString(t.Body, -1) {
-		raw = append(raw, u)
+	for _, m := range rawURLRE.FindAllStringIndex(t.Body, -1) {
+		bodyURLs = append(bodyURLs, extractedURL{pos: m[0], url: t.Body[m[0]:m[1]]})
+	}
+	for _, u := range extractBareHostnameURLs(t.Body) {
+		bodyURLs = append(bodyURLs, u)
+	}
+	sort.SliceStable(bodyURLs, func(i, j int) bool {
+		return bodyURLs[i].pos < bodyURLs[j].pos
+	})
+	for _, u := range bodyURLs {
+		raw = append(raw, u.url)
 	}
 	// Markdown-link URLs and raw URLs commonly overlap (the markdown link
 	// embeds a URL that the raw regex also finds). Dedupe case-insensitively
@@ -146,6 +159,43 @@ func extractURLs(t *types.Thread) []string {
 		keep = append(keep, u)
 	}
 	return keep
+}
+
+type extractedURL struct {
+	pos int
+	url string
+}
+
+func extractBareHostnameURLs(body string) []extractedURL {
+	var out []extractedURL
+	matches := bareHostnameRE.FindAllStringIndex(body, -1)
+	for _, match := range matches {
+		start, end := match[0], match[1]
+		if start > 0 {
+			prev := body[start-1]
+			if prev == '@' {
+				continue
+			}
+		}
+		host := body[start:end]
+		prefixStart := start - len("https://")
+		if prefixStart >= 0 && strings.EqualFold(body[prefixStart:start], "https://") {
+			continue
+		}
+		prefixStart = start - len("http://")
+		if prefixStart >= 0 && strings.EqualFold(body[prefixStart:start], "http://") {
+			continue
+		}
+		out = append(out, extractedURL{pos: start, url: normalizeBareHostnameURL(host)})
+	}
+	return out
+}
+
+func normalizeBareHostnameURL(host string) string {
+	if slash := strings.IndexByte(host, '/'); slash >= 0 {
+		return "https://" + strings.ToLower(host[:slash]) + host[slash:]
+	}
+	return "https://" + strings.ToLower(host)
 }
 
 func hasImageExt(u string) bool {
@@ -180,7 +230,7 @@ func mergeTargetURLs(primary, fallback []string) []string {
 	}
 
 	seen := map[string]bool{}
-	var grounded []string  // classifier URLs that appear in OP — trustworthy
+	var grounded []string   // classifier URLs that appear in OP — trustworthy
 	var ungrounded []string // classifier URLs not in OP — possibly hallucinated
 	add := func(target *[]string, u string) {
 		u = strings.TrimSpace(u)
