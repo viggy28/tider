@@ -77,6 +77,7 @@ For any other ShopType (dropship, b2b_industrial, saas, services, portfolio, unc
 - Do NOT infer behavior you can't see: checkout flow, page speed, mobile rendering not in the screenshot, conversion rates, inventory, prices not visible.
 - Do NOT fabricate observations. If the screenshot is partial or low-quality, list that in `limitations`.
 - Severity: `high` for observations that materially hurt trust or conversion; `medium` for clear-but-fixable issues; `low` for polish-level notes.
+- **Mobile-risk severity cap.** When the inspected screenshot is desktop-only (the typical Firecrawl `screenshot@fullPage` capture), `mobile_risk` observations may be inferred at best — never directly verified. Cap their severity at `medium`. If you list any `mobile_risk` observation, you MUST also add a matching note to `limitations` that mobile responsiveness was not directly inspected, so the downstream drafter can defensively skip mobile recommendations from desktop captures.
 - Recommendations should be one specific actionable change, not "improve your branding".
 
 # Output

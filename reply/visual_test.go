@@ -213,6 +213,14 @@ func TestRenderVisualPromptIncludesKeyElements(t *testing.T) {
 		"kova_signals",
 		"do NOT pitch",     // anti-pitch rule
 		"Do NOT name the project", // explicit Kova rename ban
+		// SPEC_REVIEW_DRAFT_REFINEMENT.md tightens mobile_risk severity:
+		// from a desktop-only screenshot, mobile claims are inferred at
+		// best, so the analyzer must cap mobile_risk severity at medium
+		// and add a corresponding limitations note. This protects the
+		// downstream review drafter from getting "high"-severity mobile
+		// findings the user shouldn't surface as a top fix.
+		"Mobile-risk severity cap",
+		"Cap their severity at `medium`",
 	}
 	for _, s := range checks {
 		if !strings.Contains(prompt, s) {

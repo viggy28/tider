@@ -110,27 +110,32 @@ func alternatives(drafts []types.ReplyDraft, pickID string) []types.ReplyDraft {
 }
 
 // displayLabel maps known variant ids to their spec-mandated display
-// form. SPEC_REPLY_REFINEMENT.md (v2) "Output rendering" defines the
-// reply-mode forms and aligns review-mode labels (`shorter`/`question`
-// shared with reply mode; `structured-review` is review-only).
+// form. SPEC_REPLY_REFINEMENT.md "Output rendering" defines the
+// reply-mode forms; SPEC_REVIEW_DRAFT_REFINEMENT.md aligns review-mode
+// labels — `shorter` / `question` are shared with reply mode and
+// `structured-review` is review-only.
 //
-// Hyphen retention is per-label and intentional: compound modifiers
-// like "structured-review" keep the hyphen; the canonical "Warmer /
-// Personal" is rendered with explicit spacing per spec.
+// Display formatting is per-label and intentional: compound modifiers
+// stay hyphenated only when the hyphen reads as part of the adjective
+// (the now-removed legacy "Thread-Aware" was an example). The canonical
+// "Warmer / Personal" uses an explicit slash. The review-mode
+// `Structured Review` label is a noun phrase and uses a space, per
+// SPEC_REVIEW_DRAFT_REFINEMENT.md "Output rendering" — earlier code
+// rendered "Structured-Review" with a hyphen and was corrected.
 //
-// Old ids from earlier specs (short / thread-aware / personal-story /
-// question-first / detailed) are kept in the map so old session
+// Legacy ids from earlier specs (short / thread-aware / personal-story
+// / question-first / detailed) are kept in the map so old session
 // drafts.json files re-render with reasonable display labels. New
-// outputs use the v2 ids.
+// outputs use the current ids only.
 var displayLabel = map[string]string{
-	// v2 reply-mode (SPEC_REPLY_REFINEMENT.md)
+	// reply-mode (SPEC_REPLY_REFINEMENT.md)
 	"best":            "Best",
 	"shorter":         "Shorter",
 	"counterpoint":    "Counterpoint",
 	"warmer-personal": "Warmer / Personal",
 	"question":        "Question",
-	// review-mode-specific
-	"structured-review": "Structured-Review",
+	// review-mode (SPEC_REVIEW_DRAFT_REFINEMENT.md)
+	"structured-review": "Structured Review",
 	// Legacy ids preserved so old session re-renders aren't ugly. Not
 	// produced by current prompts; keep for backward-compat only.
 	"short":          "Short",
