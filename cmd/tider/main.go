@@ -24,6 +24,7 @@ func main() {
 	rootCmd.AddCommand(researchCmd)
 	rootCmd.AddCommand(intakeCmd)
 	rootCmd.AddCommand(postCmd)
+	rootCmd.AddCommand(replyCmd)
 	rootCmd.AddCommand(regenCmd)
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(contextCmd)

@@ -86,7 +86,7 @@ without a key are skipped with a warning rather than failing the run.`,
 		if err != nil {
 			return err
 		}
-		_, _, cfgMaxTokens := cfg.FanOutModels("draft")
+		_, _, cfgMaxTokens := cfg.FanOutModels("post")
 
 		opts := draft.Default()
 		if postVariantSet == "full" {

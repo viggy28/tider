@@ -71,10 +71,12 @@ func Default() *Config {
 			AnthropicModel: "claude-sonnet-4-7",
 			OpenAIModel:    "gpt-5",
 			Tasks: map[string]TaskConfig{
-				"intake":   {Model: "gpt-4o-mini", MaxTokens: 8192},
-				"research": {Model: "gpt-5", MaxTokens: 10000},
-				"draft":    {MaxTokens: 10000},
-				"regen":    {MaxTokens: 4096},
+				"intake":     {Model: "gpt-4o-mini", MaxTokens: 8192},
+				"research":   {Model: "gpt-5", MaxTokens: 10000},
+				"post":       {MaxTokens: 10000},
+				"regen":      {MaxTokens: 4096},
+				"reply_mode": {Model: "gpt-4o-mini", MaxTokens: 2048},
+				"reply":      {MaxTokens: 8192},
 			},
 		},
 		Defaults: DefaultsConfig{
