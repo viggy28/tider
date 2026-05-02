@@ -443,3 +443,39 @@ type InspectionSummary struct {
 	ShopType       string   `json:"shop_type,omitempty"`
 	Limitations    []string `json:"limitations,omitempty"`
 }
+
+// ReplyPost records the final reply text the user actually posted, plus
+// edit-delta tags describing how it diverged from the generated drafts.
+// Written by `tider reply post <session-id>` into the same session
+// directory as drafts.json. SessionID is duplicated into the payload so
+// the file is portable / indexable independent of its parent directory.
+//
+// SourceDraftID is intentionally optional: in v1 the user pastes the
+// final text directly without selecting a draft, since the common
+// workflow is "generate drafts → modify manually → post the result".
+type ReplyPost struct {
+	SessionID     string    `json:"session_id"`
+	ThreadURL     string    `json:"thread_url"`
+	SourceDraftID string    `json:"source_draft_id,omitempty"`
+	FinalText     string    `json:"final_text"`
+	PostedAt      time.Time `json:"posted_at"`
+	Feedback      []string  `json:"feedback,omitempty"`
+	Note          string    `json:"note,omitempty"`
+}
+
+// ReplyOutcome captures what happened to a posted reply 2-3 days later.
+// Written by `tider reply outcome <session-id>` and requires a prior
+// post.json in the same session — outcomes only make sense relative to
+// something that was actually posted.
+type ReplyOutcome struct {
+	SessionID              string    `json:"session_id"`
+	ThreadURL              string    `json:"thread_url"`
+	PostedAt               time.Time `json:"posted_at"`
+	CheckedAt              time.Time `json:"checked_at"`
+	Upvotes                int       `json:"upvotes"`
+	OPReplied              bool      `json:"op_replied"`
+	OtherCommentEngagement bool      `json:"other_comment_engagement"`
+	LandedState            string    `json:"landed_state"` // landed|ignored|too_long|too_generic|too_operational|too_soft
+	KovaSignal             string    `json:"kova_signal"`  // helped|hurt|neutral
+	Note                   string    `json:"note,omitempty"`
+}
