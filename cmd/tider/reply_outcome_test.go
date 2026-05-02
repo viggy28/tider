@@ -98,3 +98,49 @@ func TestPromptChoiceLoopsOnInvalid(t *testing.T) {
 		t.Errorf("got %q, want %q", got, landedStates[0])
 	}
 }
+
+func TestPromptYesNoAbortsOnEOF(t *testing.T) {
+	// Empty stdin (closed pipe) → ReadString returns "" + io.EOF
+	// repeatedly. Without an explicit EOF check, the retry loop would
+	// spin forever. Verify we abort with a clear error instead.
+	in := bufio.NewReader(strings.NewReader(""))
+	_, err := promptYesNo(in, io.Discard, "?")
+	if err == nil {
+		t.Fatal("expected error on EOF, got nil")
+	}
+	if !strings.Contains(err.Error(), "stdin closed") {
+		t.Errorf("expected stdin-closed error, got %v", err)
+	}
+}
+
+func TestPromptYesNoAbortsAfterInvalidThenEOF(t *testing.T) {
+	// First read returns garbage (re-prompt), second read is EOF — must
+	// abort, not spin.
+	in := bufio.NewReader(strings.NewReader("maybe\n"))
+	_, err := promptYesNo(in, io.Discard, "?")
+	if err == nil {
+		t.Fatal("expected error on EOF after invalid input, got nil")
+	}
+	if !strings.Contains(err.Error(), "stdin closed") {
+		t.Errorf("expected stdin-closed error, got %v", err)
+	}
+}
+
+func TestPromptChoiceAbortsOnEOF(t *testing.T) {
+	in := bufio.NewReader(strings.NewReader(""))
+	_, err := promptChoice(in, io.Discard, "landed", landedStates)
+	if err == nil {
+		t.Fatal("expected error on EOF, got nil")
+	}
+	if !strings.Contains(err.Error(), "stdin closed") {
+		t.Errorf("expected stdin-closed error, got %v", err)
+	}
+}
+
+func TestPromptChoiceAbortsAfterInvalidThenEOF(t *testing.T) {
+	in := bufio.NewReader(strings.NewReader("99\n"))
+	_, err := promptChoice(in, io.Discard, "landed", landedStates)
+	if err == nil {
+		t.Fatal("expected error on EOF after invalid input, got nil")
+	}
+}

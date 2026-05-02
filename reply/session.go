@@ -188,6 +188,17 @@ func ResolveSession(root, idOrSubstring string) (*Session, error) {
 		return nil, errors.New("session id required")
 	}
 
+	// Reject path-traversal-y inputs before we touch the filesystem.
+	// Session ids are plain directory names (date-sub-postid, possibly
+	// with -2/-3 collision suffixes); anything containing a path
+	// separator or ".." is either a typo or an attempt to walk out of
+	// the sessions root. filepath.Join silently collapses ".." segments,
+	// so without this guard `tider reply post ../../foo` would resolve
+	// to a directory outside ~/.tider/sessions/replies/ on Stat.
+	if strings.ContainsAny(idOrSubstring, `/\`) || strings.Contains(idOrSubstring, "..") {
+		return nil, fmt.Errorf("invalid session id %q: must be a plain directory name", idOrSubstring)
+	}
+
 	// Exact match first.
 	exact := filepath.Join(root, idOrSubstring)
 	if fi, err := os.Stat(exact); err == nil && fi.IsDir() {

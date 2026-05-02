@@ -101,6 +101,39 @@ func TestResolveSessionMissingRoot(t *testing.T) {
 	}
 }
 
+func TestResolveSessionRejectsPathTraversal(t *testing.T) {
+	// Defense against the path-traversal class of inputs. Without the
+	// guard, filepath.Join collapses ".." segments and the exact-match
+	// branch would happily Stat outside the sessions root — letting
+	// `tider reply post ../../foo` operate on arbitrary directories.
+	root := t.TempDir()
+	if _, err := NewSession(root, "shopify", "abc123", time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []string{
+		"../foo",
+		"../../etc",
+		"foo/bar",
+		"foo\\bar",
+		"..",
+		"foo/../bar",
+		"/absolute/path",
+	}
+	for _, in := range cases {
+		t.Run(in, func(t *testing.T) {
+			_, err := ResolveSession(root, in)
+			if err == nil {
+				t.Errorf("expected error for traversal-y input %q", in)
+				return
+			}
+			if !strings.Contains(err.Error(), "invalid session id") {
+				t.Errorf("expected invalid-session-id error, got %v", err)
+			}
+		})
+	}
+}
+
 func TestSessionStatusProgression(t *testing.T) {
 	root := t.TempDir()
 	s, err := NewSession(root, "shopify", "abc", time.Now())

@@ -167,6 +167,11 @@ func promptInt(in *bufio.Reader, out io.Writer, prompt string) (int, error) {
 // promptYesNo blocks until the user answers y/n. Empty input is rejected
 // — outcome capture is structured-by-design, so we want a real signal,
 // not a default-on-blank.
+//
+// On stdin EOF (closed pipe / non-interactive invocation) we abort
+// rather than re-prompt: ReadString returns "" + io.EOF immediately
+// and forever once the underlying file is exhausted, so a naive retry
+// loop spins indefinitely.
 func promptYesNo(in *bufio.Reader, out io.Writer, prompt string) (bool, error) {
 	for {
 		fmt.Fprintf(out, "%s [y/n]: ", prompt)
@@ -179,17 +184,19 @@ func promptYesNo(in *bufio.Reader, out io.Writer, prompt string) (bool, error) {
 			return true, nil
 		case "n", "no":
 			return false, nil
-		case "":
-			fmt.Fprintln(out, "  please answer y or n")
-		default:
-			fmt.Fprintln(out, "  please answer y or n")
 		}
+		if err == io.EOF {
+			return false, errors.New("stdin closed before yes/no answer")
+		}
+		fmt.Fprintln(out, "  please answer y or n")
 	}
 }
 
 // promptChoice presents a numbered list of options and parses a number
 // or exact-name reply. Loops until the user picks something valid —
 // outcome capture is meant to be structured.
+//
+// On stdin EOF we abort rather than re-prompt; see promptYesNo.
 func promptChoice(in *bufio.Reader, out io.Writer, label string, options []string) (string, error) {
 	fmt.Fprintf(out, "\n%s:\n", label)
 	for i, o := range options {
@@ -206,11 +213,8 @@ func promptChoice(in *bufio.Reader, out io.Writer, label string, options []strin
 			return "", err
 		}
 		entry := strings.ToLower(strings.TrimSpace(line))
-		if entry == "" {
-			fmt.Fprintln(out, "  selection required")
-			continue
-		}
-		if n, err := strconv.Atoi(entry); err == nil {
+
+		if n, atoiErr := strconv.Atoi(entry); atoiErr == nil {
 			if n >= 1 && n <= len(options) {
 				return options[n-1], nil
 			}
@@ -220,6 +224,14 @@ func promptChoice(in *bufio.Reader, out io.Writer, label string, options []strin
 		if known[entry] {
 			return entry, nil
 		}
-		fmt.Fprintln(out, "  not a valid option")
+
+		if err == io.EOF {
+			return "", fmt.Errorf("stdin closed before %s selection", label)
+		}
+		if entry == "" {
+			fmt.Fprintln(out, "  selection required")
+		} else {
+			fmt.Fprintln(out, "  not a valid option")
+		}
 	}
 }
