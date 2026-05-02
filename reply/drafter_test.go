@@ -284,7 +284,9 @@ func TestRenderReplyPromptStructuralRules(t *testing.T) {
 
 	// (1) workshop-curriculum ban — concrete forbidden template + explicit
 	// failure mode language so the model has both positive and negative
-	// signals.
+	// signals. Scoped to non-technical threads (technical/troubleshooting
+	// threads legitimately need bullets/numbered steps for code/config/
+	// diagnostics).
 	curriculumBans := []string{
 		"workshop curriculum",                        // section title
 		"FORBIDDEN",                                  // strong signal
@@ -292,11 +294,28 @@ func TestRenderReplyPromptStructuralRules(t *testing.T) {
 		"funnel-speak chains",                        // explicit anti-pattern
 		"maintenance mode folder",                    // jargon called out by name
 		"performance + lifecycle stack",              // jargon called out by name
-		"Reddit comments don't read like consultant deliverables",
+		"stack of consultant patterns",               // failure-mode framing (the thing the rule actually targets)
+		"3+ of the patterns above",                   // explicit counting rule
 	}
 	for _, s := range curriculumBans {
 		if !strings.Contains(prompt, s) {
 			t.Errorf("reply prompt missing curriculum-ban rule %q\n--- prompt ---\n%s", s, prompt)
+		}
+	}
+
+	// Technical-thread exemption — the ban must NOT over-fire on
+	// legitimate technical/troubleshooting answers where bulleted steps,
+	// numerics, and config snippets are correct Reddit voice.
+	technicalExemptionChecks := []string{
+		"technical / troubleshooting / engineering",
+		"this rule is RELAXED",
+		"work_mem`",                                  // concrete technical example showing what's allowed
+		"upvoted answer in a Postgres-tuning thread", // explicit "this is correct voice for those threads" (generic, no named sub)
+		"not concrete-steps technical answers",       // explicit clarification of what the rule does NOT target
+	}
+	for _, s := range technicalExemptionChecks {
+		if !strings.Contains(prompt, s) {
+			t.Errorf("reply prompt missing technical-thread exemption %q\n--- prompt ---\n%s", s, prompt)
 		}
 	}
 
@@ -335,7 +354,7 @@ func TestRenderReplyPromptStructuralRules(t *testing.T) {
 	// the rule-section AND the anti-tell direction.
 	antiTellChecks := []string{
 		"Walk past consensus without naming it",
-		"Workshop-curriculum `Best Pick`",
+		"Workshop-curriculum `Best Pick` on non-technical threads", // scoping explicit in the anti-tell too
 		"Setup paragraph before the thesis",
 	}
 	for _, s := range antiTellChecks {

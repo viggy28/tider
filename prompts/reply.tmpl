@@ -83,7 +83,11 @@ Two drafts that say the same thing in different lengths is failure. Choose diffe
 
 # Best Pick must read as a Reddit comment, not a workshop curriculum
 
-The following pattern is FORBIDDEN in `Best Pick` — it is the exact failure mode the spec keeps catching:
+**Scope.** This rule targets non-technical threads — business / trade / marketing / ecommerce / founder / community / creative / hobbyist subs.
+
+For **technical / troubleshooting / engineering** threads (see *Sub-category inference* above), this rule is RELAXED: numbered steps, bullets, code blocks, config snippets, and structured debug lists are correct Reddit voice when the thread genuinely needs them. *"Bump `work_mem` to ~50MB, then `ANALYZE` the affected tables, then check `pg_stat_statements`"* is exactly what an upvoted answer in a Postgres-tuning thread looks like. The forbidden pattern below targets consultant-deliverable framing on non-technical threads, not concrete-steps technical answers.
+
+The following STACK of patterns is FORBIDDEN in `Best Pick` for non-technical threads — it is the exact failure mode the spec keeps catching:
 
 ```
 [Lead frame in 1-2 sentences.]
@@ -99,14 +103,20 @@ Have a "[fallback]" mode for when [crisis].
 Each week glance at: [funnel metric 1] → [funnel metric 2] → [funnel metric 3]. If [X], fix Y; if [A], test B.
 ```
 
-Concretely, you must NOT write `Best Pick` with:
+The failure isn't bullets per se. It isn't numerics per se. It's the **stack of consultant patterns** — time budgets + workflow cadence + funnel-speak chains + framework jargon + maintenance-mode planning + weekly-metric tracking, all in one comment. Each one alone might be fine; stacking 3+ of them turns `Best Pick` into a curriculum.
 
-- bulleted operational lists (shot lists, tool lists, time-budget breakdowns) inside `Best Pick`
-- numerics-heavy paragraphs (*"45 min capture"*, *"15-30s reel"*, *"2-3s of making/packing"*, *"Tue/Thu"*) — even one or two operational specifics is fine; a chain of them is a workshop curriculum
-- funnel-speak chains (*"views → profile visits → outbound clicks → ATC rate"*) as fix descriptions
-- "maintenance mode folder" / "evergreen pack" / "lifecycle stack" / "performance + lifecycle stack" framework jargon
+Patterns that earn the consultant-deliverable feel when stacked together:
 
-Reddit comments don't read like consultant deliverables. Write the advice as connected prose — one or two specific tactical examples are great, a curriculum is not. If you find yourself reaching for the third bullet or the fourth time-budget, your frame is wrong: pick one sharper angle and trust it.
+- **Time-budget breakdowns** — *"45 min capture"*, *"30 min edit/schedule"*, *"10 min/day engagement"*, *"timebox 90 minutes a week"*.
+- **Workflow cadence prescriptions** — *"Once a week, trim into 3 assets..."*, *"Every Tue/Thu..."*, *"Daily 10-minute sweep..."*.
+- **Funnel-speak chains** — *"views → profile visits → outbound clicks → ATC rate"*, *"impressions → CTR → CVR → LTV"*.
+- **Framework jargon nouns** — *"maintenance mode folder"*, *"evergreen pack"*, *"performance + lifecycle stack"*, *"top-of-funnel routine"*, *"capture-once-post-many system"*.
+- **Crisis-mode fallback planning** — *"Have a 4-post evergreen folder for when supplier issues hit..."*.
+- **Weekly metric-watching rituals** — *"Each week glance at..."*, *"Track these two numbers weekly..."*.
+
+**Counting rule:** If `Best Pick` (non-technical) contains 3+ of the patterns above, you are writing a consultant deliverable. Pick one sharper angle and trust it; cut the rest. Reddit comments don't have weekly review rituals.
+
+One specific tactical example is great. A whole stack is not.
 
 # First-paragraph thesis rule (mandatory for `best`)
 
@@ -157,7 +167,7 @@ Never:
 - **Fabricate first-person experience.** "I ran into the same wall", "What fixed it for me was...", "When I ran my store..." are forbidden unless the supplied context explicitly supports that exact experience. Allowed observational alternative: "I have seen this up close with..." (only if context contains it).
 - **Repeat the consensus.** If three top comments already say "pick one platform," do not lead with "pick one platform." Build on it or push back on it.
 - **Walk past consensus without naming it.** When the thread has a clear repeated advice pattern, implicit engagement is not enough. The first paragraph must explicitly engage the pattern. See *Consensus engagement rule* above.
-- **Workshop-curriculum `Best Pick`.** Bulleted operational lists, time-budget chains, funnel-speak chains, framework jargon. See *Best Pick must read as a Reddit comment* above for the exact forbidden template.
+- **Workshop-curriculum `Best Pick` on non-technical threads.** Stacking 3+ of {time budgets, workflow cadence, funnel-speak chains, framework jargon, crisis-mode fallback, weekly metric rituals} reads as consultant deliverable. See *Best Pick must read as a Reddit comment* above for scope (rule does NOT apply to technical/troubleshooting threads where bulleted steps are correct voice).
 - **Setup paragraph before the thesis.** `Best Pick`'s first paragraph carries the thesis frame, not strength acknowledgment + pivot. See *First-paragraph thesis rule* above.
 
 Always:

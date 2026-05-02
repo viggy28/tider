@@ -483,12 +483,18 @@ func TestRenderReviewPromptMandatesChannelReuseLine(t *testing.T) {
 	}
 }
 
-// First-paragraph placement rule: when --context=kova + non-handmade
-// shop type + medium+ visual finding, the visual-proof + channel-reuse
-// angle MUST appear in the first paragraph of Best Pick. The earlier
-// drafts buried it at paragraph 2 or 3. This is a softer version of
-// "must lead as fix #1" — the rule allows the angle to co-lead with
-// another fix in the same paragraph.
+// First-paragraph placement rule: when --context=kova is supplied AND
+// the visual notes contain at least one medium+ visual finding (any
+// area), the visual-proof + channel-reuse angle MUST appear in the
+// first paragraph of Best Pick. The earlier drafts buried it at
+// paragraph 2 or 3. This is a softer version of "must lead as fix #1" —
+// the rule allows the angle to co-lead with another fix in the same
+// paragraph.
+//
+// The shop-type condition was dropped from this rule because it was
+// redundant with the Kova lens section above (which already gates
+// HOW the angle is worded per shop type) and created an explicit
+// contradiction for `boutique` shops that match both branches.
 func TestRenderReviewPromptFirstParagraphPlacementRule(t *testing.T) {
 	in := sampleReviewInput()
 	prompt, err := RenderReviewPrompt(in)
@@ -498,18 +504,27 @@ func TestRenderReviewPromptFirstParagraphPlacementRule(t *testing.T) {
 
 	placementChecks := []string{
 		"First-paragraph placement",                         // section title
-		"non-handmade",                                      // shop type condition
 		"medium`+ severity finding",                         // severity condition
 		"any area",                                          // intentional non-mechanical (not tied to product_images/trust/generic_risk)
 		"first paragraph** of `Best Pick`",                  // explicit MUST target
 		"Not paragraph 2. Not paragraph 3. Paragraph 1.",    // emphatic placement language
 		"pair it with another fix",                          // explicit allowance for co-lead
 		"dual-purpose framing",                              // links to channel-reuse rule
+		"Shop type does NOT gate this rule",                 // explicit drop of shop-type condition
 	}
 	for _, s := range placementChecks {
 		if !strings.Contains(prompt, s) {
 			t.Errorf("review prompt missing first-paragraph rule %q\n--- prompt ---\n%s", s, prompt)
 		}
+	}
+
+	// Regression guard: the rule must NOT re-introduce the contradictory
+	// "non-handmade list including boutique" condition. Boutique gets
+	// KovaSignals populated upstream and is treated as Kova-adjacent
+	// elsewhere in the prompt — listing it as non-handmade in the gate
+	// creates a real ambiguity for the model.
+	if strings.Contains(prompt, "is non-handmade (`b2b_industrial`") {
+		t.Errorf("review prompt re-introduced the non-handmade shop-type gate that contradicts the Kova lens classification\n--- prompt ---\n%s", prompt)
 	}
 
 	// Anti-tell coverage.
