@@ -144,3 +144,73 @@ func TestPromptChoiceAbortsAfterInvalidThenEOF(t *testing.T) {
 		t.Fatal("expected error on EOF after invalid input, got nil")
 	}
 }
+
+// TestPromptsShareSingleReader exercises the full outcome questionnaire
+// sequence (overwrite confirm + upvotes + two yes/no + two choice +
+// note) against a single bufio.Reader, simulating piped answers. This
+// is the regression test for the bug where runReplyOutcome instantiated
+// a fresh bufio.Reader for the overwrite-confirm step and another for
+// the questionnaire — the first reader would buffer chunks past its
+// own newline and the second reader would lose those bytes, causing
+// later prompts to spuriously hit EOF.
+func TestPromptsShareSingleReader(t *testing.T) {
+	// Simulating: overwrite=y, upvotes=5, op_replied=y, other=n,
+	//             landed=1 ("landed"), kova=helped, note="quick note".
+	// All in one piped stream. If the bug returned, the second prompt
+	// onward would all see EOF.
+	input := "y\n5\ny\nn\n1\nhelped\nquick note\n"
+	in := bufio.NewReader(strings.NewReader(input))
+
+	overwrite, err := confirmYesNo(in, io.Discard, "overwrite?")
+	if err != nil {
+		t.Fatalf("overwrite: %v", err)
+	}
+	if !overwrite {
+		t.Error("overwrite should be true")
+	}
+
+	upvotes, err := promptInt(in, io.Discard, "upvotes: ")
+	if err != nil {
+		t.Fatalf("upvotes: %v", err)
+	}
+	if upvotes != 5 {
+		t.Errorf("upvotes = %d, want 5", upvotes)
+	}
+
+	opReplied, err := promptYesNo(in, io.Discard, "op replied?")
+	if err != nil {
+		t.Fatalf("op_replied: %v", err)
+	}
+	if !opReplied {
+		t.Error("op_replied should be true")
+	}
+
+	other, err := promptYesNo(in, io.Discard, "other engagement?")
+	if err != nil {
+		t.Fatalf("other: %v", err)
+	}
+	if other {
+		t.Error("other should be false")
+	}
+
+	landed, err := promptChoice(in, io.Discard, "landed", landedStates)
+	if err != nil {
+		t.Fatalf("landed: %v", err)
+	}
+	if landed != landedStates[0] {
+		t.Errorf("landed = %q, want %q", landed, landedStates[0])
+	}
+
+	kova, err := promptChoice(in, io.Discard, "kova", kovaSignals)
+	if err != nil {
+		t.Fatalf("kova: %v", err)
+	}
+	if kova != "helped" {
+		t.Errorf("kova = %q, want helped", kova)
+	}
+
+	note := promptLine(in, io.Discard, "note: ")
+	if note != "quick note" {
+		t.Errorf("note = %q, want %q", note, "quick note")
+	}
+}

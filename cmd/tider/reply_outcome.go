@@ -88,8 +88,15 @@ func runReplyOutcome(cmd *cobra.Command, args []string) error {
 	fmt.Fprintln(os.Stderr, post.FinalText)
 	fmt.Fprintln(os.Stderr, strings.Repeat("─", 60))
 
+	// One bufio.Reader for the whole interactive path. bufio reads
+	// stdin in 4KB chunks and buffers anything past the first newline;
+	// instantiating a second reader (as we used to for the overwrite
+	// confirmation) drops those buffered bytes, so a piped answer
+	// stream like `y\n5\nyes\n...` would lose everything after `y\n`
+	// and the questionnaire would hit a spurious EOF.
+	in := bufio.NewReader(os.Stdin)
+
 	if sess.HasFile("outcome.json") {
-		in := bufio.NewReader(os.Stdin)
 		ok, err := confirmYesNo(in, os.Stderr, "outcome.json already exists for this session. Overwrite?")
 		if err != nil {
 			return err
@@ -98,8 +105,6 @@ func runReplyOutcome(cmd *cobra.Command, args []string) error {
 			return errors.New("aborted by user")
 		}
 	}
-
-	in := bufio.NewReader(os.Stdin)
 
 	upvotes, err := promptInt(in, os.Stderr, "upvotes / score: ")
 	if err != nil {
