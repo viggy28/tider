@@ -154,6 +154,66 @@ func (s *Session) SaveOutcome(o *types.ReplyOutcome) error {
 	return s.WriteJSON("outcome.json", o)
 }
 
+// regensDir is the subdirectory under the session that holds regen
+// iterations. Kept private — callers go through SaveRegen.
+const regensDir = "regens"
+
+// regenTimestampLayout produces filesystem-safe timestamps. Colons
+// from the standard RFC3339 representation are replaced with hyphens
+// so filenames work across macOS/Linux and Windows alike, and the
+// trailing "Z" preserves the UTC indicator visible from a directory
+// listing.
+const regenTimestampLayout = "2006-01-02T15-04-05Z"
+
+// SaveRegen writes one regen iteration under <session>/regens/<ts>.json
+// and returns the path relative to the session directory (e.g.
+// "regens/2026-05-02T21-37-10Z.json"). Atomic via WriteJSON's temp+
+// rename. Caller is expected to follow up with AppendHistoryEvent so
+// the session's history.jsonl stays in lockstep with the artifact set.
+//
+// The timestamp is derived from r.Generated when set, falling back to
+// time.Now().UTC() so callers that forget to populate Generated still
+// get a unique, sorted filename.
+func (s *Session) SaveRegen(r *types.ReplyRegen) (string, error) {
+	if r == nil {
+		return "", errors.New("session: nil regen")
+	}
+	ts := r.Generated
+	if ts.IsZero() {
+		ts = time.Now().UTC()
+	}
+	rel := filepath.Join(regensDir, ts.UTC().Format(regenTimestampLayout)+".json")
+	if err := os.MkdirAll(filepath.Join(s.Dir, regensDir), 0o755); err != nil {
+		return "", fmt.Errorf("mkdir regens: %w", err)
+	}
+	if err := s.WriteJSON(rel, r); err != nil {
+		return "", err
+	}
+	return rel, nil
+}
+
+// AppendHistoryEvent appends one JSON line to <session>/history.jsonl.
+// Append-only by design: history is the auditable log of what
+// happened, in order, and is never rewritten. Each event is one
+// self-contained JSON object so even a partial write (interrupted
+// run) leaves a valid, parseable prefix.
+func (s *Session) AppendHistoryEvent(ev types.HistoryEvent) error {
+	data, err := json.Marshal(ev)
+	if err != nil {
+		return fmt.Errorf("marshal history event: %w", err)
+	}
+	path := filepath.Join(s.Dir, "history.jsonl")
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("open history.jsonl: %w", err)
+	}
+	defer f.Close()
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		return fmt.Errorf("write history event: %w", err)
+	}
+	return nil
+}
+
 // HasFile reports whether <name> exists in the session directory.
 func (s *Session) HasFile(name string) bool {
 	_, err := os.Stat(filepath.Join(s.Dir, name))
