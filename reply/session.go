@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -143,4 +144,162 @@ func (s *Session) SaveDrafts(b *types.ReplyBundle) error {
 
 func (s *Session) SaveOutput(md string) error {
 	return s.WriteMarkdown("output.md", md)
+}
+
+func (s *Session) SavePost(p *types.ReplyPost) error {
+	return s.WriteJSON("post.json", p)
+}
+
+func (s *Session) SaveOutcome(o *types.ReplyOutcome) error {
+	return s.WriteJSON("outcome.json", o)
+}
+
+// HasFile reports whether <name> exists in the session directory.
+func (s *Session) HasFile(name string) bool {
+	_, err := os.Stat(filepath.Join(s.Dir, name))
+	return err == nil
+}
+
+// LoadJSON reads <name> from the session directory and unmarshals into v.
+func (s *Session) LoadJSON(name string, v any) error {
+	data, err := os.ReadFile(filepath.Join(s.Dir, name))
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(data, v); err != nil {
+		return fmt.Errorf("unmarshal %s: %w", name, err)
+	}
+	return nil
+}
+
+// ResolveSession finds a session under root by an exact directory name
+// or unique substring match. Returns the matched session, or an error
+// listing the candidates if the substring matches more than one.
+//
+// Substring (rather than strict prefix) is the contract because the
+// canonical id format is date-sub-postid: users naturally remember the
+// postID, which sits at the *end* of the slug, so a strict prefix rule
+// would reject the most common shorthand. Exact match wins over
+// substring to avoid surprises when one id happens to be a substring
+// of another.
+func ResolveSession(root, idOrSubstring string) (*Session, error) {
+	idOrSubstring = strings.TrimSpace(idOrSubstring)
+	if idOrSubstring == "" {
+		return nil, errors.New("session id required")
+	}
+
+	// Reject path-traversal-y inputs before we touch the filesystem.
+	// Session ids are plain directory names (date-sub-postid, possibly
+	// with -2/-3 collision suffixes); anything containing a path
+	// separator or ".." is either a typo or an attempt to walk out of
+	// the sessions root. filepath.Join silently collapses ".." segments,
+	// so without this guard `tider reply post ../../foo` would resolve
+	// to a directory outside ~/.tider/sessions/replies/ on Stat.
+	if strings.ContainsAny(idOrSubstring, `/\`) || strings.Contains(idOrSubstring, "..") {
+		return nil, fmt.Errorf("invalid session id %q: must be a plain directory name", idOrSubstring)
+	}
+
+	// Exact match first.
+	exact := filepath.Join(root, idOrSubstring)
+	if fi, err := os.Stat(exact); err == nil && fi.IsDir() {
+		return &Session{Dir: exact}, nil
+	}
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("no sessions found at %s (have you run `tider reply --url=...` yet?)", root)
+		}
+		return nil, fmt.Errorf("read sessions root: %w", err)
+	}
+
+	var matches []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if strings.Contains(e.Name(), idOrSubstring) {
+			matches = append(matches, e.Name())
+		}
+	}
+
+	switch len(matches) {
+	case 0:
+		return nil, fmt.Errorf("no session matching %q under %s", idOrSubstring, root)
+	case 1:
+		return &Session{Dir: filepath.Join(root, matches[0])}, nil
+	default:
+		return nil, fmt.Errorf("ambiguous session id %q matches %d candidates:\n  %s", idOrSubstring, len(matches), strings.Join(matches, "\n  "))
+	}
+}
+
+// SessionStatus reports the lifecycle stage of a session based on which
+// artifacts are on disk. The values map directly to what `reply recent`
+// displays.
+type SessionStatus string
+
+const (
+	SessionStatusFailed          SessionStatus = "failed"
+	SessionStatusDrafted         SessionStatus = "drafted"
+	SessionStatusPosted          SessionStatus = "posted"
+	SessionStatusOutcomeRecorded SessionStatus = "outcome-recorded"
+)
+
+// Status inspects the session directory and returns the current stage.
+// Order matters: outcome > post > drafts > failed.
+func (s *Session) Status() SessionStatus {
+	switch {
+	case s.HasFile("outcome.json"):
+		return SessionStatusOutcomeRecorded
+	case s.HasFile("post.json"):
+		return SessionStatusPosted
+	case s.HasFile("drafts.json"):
+		return SessionStatusDrafted
+	default:
+		return SessionStatusFailed
+	}
+}
+
+// ListSessions returns every session under root, newest first, capped at
+// limit (limit <= 0 means no cap). Newest is determined by the session
+// directory's mtime, which is set when the directory is created in
+// NewSession and stable across subsequent file writes inside it.
+func ListSessions(root string, limit int) ([]*Session, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read sessions root: %w", err)
+	}
+
+	type entryInfo struct {
+		name    string
+		modTime time.Time
+	}
+	infos := make([]entryInfo, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		fi, err := e.Info()
+		if err != nil {
+			continue
+		}
+		infos = append(infos, entryInfo{name: e.Name(), modTime: fi.ModTime()})
+	}
+
+	sort.Slice(infos, func(i, j int) bool {
+		return infos[i].modTime.After(infos[j].modTime)
+	})
+
+	if limit > 0 && len(infos) > limit {
+		infos = infos[:limit]
+	}
+
+	sessions := make([]*Session, 0, len(infos))
+	for _, info := range infos {
+		sessions = append(sessions, &Session{Dir: filepath.Join(root, info.name)})
+	}
+	return sessions, nil
 }
