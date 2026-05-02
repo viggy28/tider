@@ -119,9 +119,9 @@ If mode is `review`:
 
 ### Target URL extraction
 
-The classifier returns `target_urls` it noticed. We also parse the OP outbound URL + markdown links + raw URLs as a fallback signal. If the classifier returned a target, it wins; otherwise take the first non-image URL found.
+The classifier returns `target_urls` it noticed. We also parse the OP outbound URL + markdown links + raw URLs + obvious bare hostnames (`example.com`) as a fallback signal. If the classifier returned a grounded target, it wins; otherwise take the first non-image URL found.
 
-Bare hostnames (`my shop is example.com`, no protocol) are not extracted — too ambiguous.
+Bare hostnames are normalized to `https://...` when they look like public domains. This covers common review posts that paste `example.com` without a protocol while still filtering Reddit and image links.
 
 ---
 

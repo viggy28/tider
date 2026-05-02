@@ -169,13 +169,13 @@ Target URL candidates:
 1. OP outbound URL for link posts
 2. markdown links in OP body
 3. raw URLs in OP body
-4. mode-classifier `target_urls`
+4. obvious bare hostnames in OP body, normalized to `https://...`
+5. mode-classifier `target_urls`
 
 Skip:
 
 - Reddit URLs
 - image-only URLs posted as examples unless the OP explicitly asks for image feedback
-- bare hostnames without protocol in v1
 
 If multiple candidates exist, choose the first candidate that looks like a shop/site/listing. Persist alternatives in `target.json`.
 
