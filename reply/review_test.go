@@ -482,3 +482,38 @@ func TestRenderReviewPromptMandatesChannelReuseLine(t *testing.T) {
 		t.Errorf("review prompt missing channel-reuse anti-tell\n--- prompt ---\n%s", prompt)
 	}
 }
+
+// First-paragraph placement rule: when --context=kova + non-handmade
+// shop type + medium+ visual finding, the visual-proof + channel-reuse
+// angle MUST appear in the first paragraph of Best Pick. The earlier
+// drafts buried it at paragraph 2 or 3. This is a softer version of
+// "must lead as fix #1" — the rule allows the angle to co-lead with
+// another fix in the same paragraph.
+func TestRenderReviewPromptFirstParagraphPlacementRule(t *testing.T) {
+	in := sampleReviewInput()
+	prompt, err := RenderReviewPrompt(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	placementChecks := []string{
+		"First-paragraph placement",                         // section title
+		"non-handmade",                                      // shop type condition
+		"medium`+ severity finding",                         // severity condition
+		"any area",                                          // intentional non-mechanical (not tied to product_images/trust/generic_risk)
+		"first paragraph** of `Best Pick`",                  // explicit MUST target
+		"Not paragraph 2. Not paragraph 3. Paragraph 1.",    // emphatic placement language
+		"pair it with another fix",                          // explicit allowance for co-lead
+		"dual-purpose framing",                              // links to channel-reuse rule
+	}
+	for _, s := range placementChecks {
+		if !strings.Contains(prompt, s) {
+			t.Errorf("review prompt missing first-paragraph rule %q\n--- prompt ---\n%s", s, prompt)
+		}
+	}
+
+	// Anti-tell coverage.
+	if !strings.Contains(prompt, "Burying the visual-proof + channel-reuse angle in paragraph 2 or later") {
+		t.Errorf("review prompt missing first-paragraph anti-tell\n--- prompt ---\n%s", prompt)
+	}
+}
