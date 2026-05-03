@@ -479,3 +479,28 @@ type ReplyOutcome struct {
 	KovaSignal             string    `json:"kova_signal"`  // helped|hurt|neutral
 	Note                   string    `json:"note,omitempty"`
 }
+
+// ReplyRegen is one iteration of `tider reply regen <session-id>
+// --note=...`. Each regen runs against the original session basis
+// (thread.json + draft-input.json + drafts.json) plus the operator
+// note — never against a chain of prior regens — and is written as
+// its own artifact under regens/<timestamp>.json so iterations stay
+// auditable. The original drafts.json is never overwritten.
+type ReplyRegen struct {
+	SessionID        string       `json:"session_id"`
+	Generated        time.Time    `json:"generated"`
+	Note             string       `json:"note"`
+	SourceDraftsPath string       `json:"source_drafts_path"`
+	Bundle           *ReplyBundle `json:"bundle"`
+}
+
+// HistoryEvent is one append-only entry in the session's history.jsonl.
+// v1 emits regen events only; future events (post, outcome, original
+// draft) can extend by adding new Type values without breaking
+// existing entries.
+type HistoryEvent struct {
+	Type      string    `json:"type"`
+	Generated time.Time `json:"generated"`
+	Note      string    `json:"note,omitempty"`
+	Path      string    `json:"path,omitempty"`
+}

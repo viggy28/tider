@@ -154,6 +154,101 @@ func (s *Session) SaveOutcome(o *types.ReplyOutcome) error {
 	return s.WriteJSON("outcome.json", o)
 }
 
+// regensDir is the subdirectory under the session that holds regen
+// iterations. Kept private — callers go through SaveRegen.
+const regensDir = "regens"
+
+// regenTimestampLayout produces filesystem-safe timestamps. Colons
+// from the standard RFC3339 representation are replaced with hyphens
+// so filenames work across macOS/Linux and Windows alike, and the
+// trailing "Z" preserves the UTC indicator visible from a directory
+// listing.
+const regenTimestampLayout = "2006-01-02T15-04-05Z"
+
+// SaveRegen writes one regen iteration under <session>/regens/<ts>.json
+// and returns the path relative to the session directory (e.g.
+// "regens/2026-05-02T21-37-10Z.json"). Caller is expected to follow up
+// with AppendHistoryEvent so the session's history.jsonl stays in
+// lockstep with the artifact set.
+//
+// The timestamp is derived from r.Generated when set, falling back to
+// time.Now().UTC() so callers that forget to populate Generated still
+// get a unique, sorted filename.
+//
+// Whole-second timestamps collide when two regens run on the same
+// session within one second (back-to-back shell invocations, scripted
+// loops). On collision we append -2, -3, ... — same idiom NewSession
+// uses for same-day session-dir collisions. The filename is claimed
+// atomically via O_CREATE|O_EXCL so concurrent invocations can't both
+// observe "free" and race their writes; without that, the append-only
+// audit contract would silently break and a history.jsonl event could
+// point at an artifact that's been overwritten.
+func (s *Session) SaveRegen(r *types.ReplyRegen) (string, error) {
+	if r == nil {
+		return "", errors.New("session: nil regen")
+	}
+	ts := r.Generated
+	if ts.IsZero() {
+		ts = time.Now().UTC()
+	}
+	base := ts.UTC().Format(regenTimestampLayout)
+
+	if err := os.MkdirAll(filepath.Join(s.Dir, regensDir), 0o755); err != nil {
+		return "", fmt.Errorf("mkdir regens: %w", err)
+	}
+
+	for i := 0; i < 1000; i++ {
+		candidate := base
+		if i > 0 {
+			candidate = fmt.Sprintf("%s-%d", base, i+1)
+		}
+		rel := filepath.Join(regensDir, candidate+".json")
+		full := filepath.Join(s.Dir, rel)
+		f, err := os.OpenFile(full, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err != nil {
+			if os.IsExist(err) {
+				continue
+			}
+			return "", fmt.Errorf("claim regen filename: %w", err)
+		}
+		// Got the filename. Close the empty placeholder so WriteJSON's
+		// temp+rename can replace it atomically with the real content.
+		if err := f.Close(); err != nil {
+			return "", fmt.Errorf("close regen placeholder: %w", err)
+		}
+		if err := s.WriteJSON(rel, r); err != nil {
+			// Best-effort cleanup so a failed write doesn't leave an
+			// empty stub claiming the slot for the next attempt.
+			_ = os.Remove(full)
+			return "", err
+		}
+		return rel, nil
+	}
+	return "", fmt.Errorf("session: too many same-second regen collisions for %s (gave up after 1000)", base)
+}
+
+// AppendHistoryEvent appends one JSON line to <session>/history.jsonl.
+// Append-only by design: history is the auditable log of what
+// happened, in order, and is never rewritten. Each event is one
+// self-contained JSON object so even a partial write (interrupted
+// run) leaves a valid, parseable prefix.
+func (s *Session) AppendHistoryEvent(ev types.HistoryEvent) error {
+	data, err := json.Marshal(ev)
+	if err != nil {
+		return fmt.Errorf("marshal history event: %w", err)
+	}
+	path := filepath.Join(s.Dir, "history.jsonl")
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("open history.jsonl: %w", err)
+	}
+	defer f.Close()
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		return fmt.Errorf("write history event: %w", err)
+	}
+	return nil
+}
+
 // HasFile reports whether <name> exists in the session directory.
 func (s *Session) HasFile(name string) bool {
 	_, err := os.Stat(filepath.Join(s.Dir, name))
