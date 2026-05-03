@@ -87,13 +87,13 @@ func GenerateReplyRegen(ctx context.Context, p llm.Provider, model string, input
 	if err := json.Unmarshal([]byte(resp.Content), &raw); err != nil {
 		return nil, fmt.Errorf("reply regen: parse json: %w (model returned: %q)", err, truncate(resp.Content, 200))
 	}
-	if len(raw.Drafts) == 0 {
-		return nil, fmt.Errorf("reply regen: no drafts returned (model output: %q)", truncate(resp.Content, 200))
+	if err := validateRegenDrafts(raw.Drafts); err != nil {
+		return nil, fmt.Errorf("reply regen: %w (model returned: %q)", err, truncate(resp.Content, 200))
 	}
 
 	pickID := raw.PickID
 	if pickID == "" {
-		pickID = raw.Drafts[0].ID
+		pickID = "best"
 	}
 
 	return &types.ReplyBundle{
@@ -104,6 +104,50 @@ func GenerateReplyRegen(ctx context.Context, p llm.Provider, model string, input
 		PickID:    pickID,
 		Generated: time.Now().UTC(),
 	}, nil
+}
+
+// regenRequiredIDs is the v1 stable variant set. Codified here so the
+// validator is the single source of truth — the prompt template, the
+// renderer, and downstream consumers all assume this exact set.
+var regenRequiredIDs = []string{"best", "shorter", "question"}
+
+// validateRegenDrafts enforces the three-variant contract on whatever
+// the model returned. Failing loud here matters because a malformed
+// bundle that slips through would still be written to
+// regens/<ts>.json and history.jsonl — leaving a broken artifact in
+// the audit log that downstream tooling can't reason about.
+//
+// Checks:
+//  1. Exactly three drafts (not 2, not 4 — the contract is fixed).
+//  2. The IDs are exactly {best, shorter, question}, deduplicated.
+//
+// Order is not enforced — the renderer doesn't depend on it, and the
+// model occasionally swaps positions even when the IDs are right.
+func validateRegenDrafts(drafts []types.ReplyDraft) error {
+	if len(drafts) != len(regenRequiredIDs) {
+		return fmt.Errorf("expected %d drafts (best, shorter, question); got %d", len(regenRequiredIDs), len(drafts))
+	}
+	seen := make(map[string]bool, len(drafts))
+	for _, d := range drafts {
+		if seen[d.ID] {
+			return fmt.Errorf("duplicate draft id %q", d.ID)
+		}
+		seen[d.ID] = true
+	}
+	for _, want := range regenRequiredIDs {
+		if !seen[want] {
+			return fmt.Errorf("missing required draft id %q (got %v)", want, draftIDs(drafts))
+		}
+	}
+	return nil
+}
+
+func draftIDs(drafts []types.ReplyDraft) []string {
+	ids := make([]string, 0, len(drafts))
+	for _, d := range drafts {
+		ids = append(ids, d.ID)
+	}
+	return ids
 }
 
 // RenderRegenPrompt exposes the rendered prompt for inspection/tests

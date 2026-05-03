@@ -133,6 +133,14 @@ func TestRenderRegenPromptIncludesNoteAndPrecedence(t *testing.T) {
 			t.Errorf("rendered prompt missing variant id %q", id)
 		}
 	}
+
+	// Pin that the contract is unconditional — the prompt must NOT
+	// hedge with "skip only if" language for any variant. v1 fork B
+	// resolved this as "Generate 3 variants, not one" with no escape
+	// hatch; the validator backs this up at the code level.
+	if strings.Contains(strings.ToLower(got), "skip only if") {
+		t.Errorf("prompt contains hedging skip clause; the three-variant contract should be unconditional")
+	}
 }
 
 func TestRenderRegenPromptIncludesPreviousDrafts(t *testing.T) {
@@ -215,14 +223,111 @@ func TestGenerateReplyRegenJSONParseError(t *testing.T) {
 }
 
 func TestGenerateReplyRegenEmptyDrafts(t *testing.T) {
+	// Empty drafts now flows through the variant-set validator: we
+	// expect a "got 0, want 3" error rather than the old "no drafts
+	// returned" message. The validator is the single source of truth
+	// for the contract.
 	p := &fakeProvider{name: "fake", response: `{"drafts":[],"pick_id":""}`}
 
 	_, err := GenerateReplyRegen(context.Background(), p, "gpt-5", sampleRegenInput(), 0)
 	if err == nil {
 		t.Fatal("expected error for empty drafts")
 	}
-	if !strings.Contains(err.Error(), "no drafts returned") {
-		t.Errorf("expected no-drafts error, got %v", err)
+	if !strings.Contains(err.Error(), "got 0") {
+		t.Errorf("expected got-0 count error, got %v", err)
+	}
+}
+
+func TestGenerateReplyRegenRejectsWrongCount(t *testing.T) {
+	// Two drafts where three are required — the model dropped a
+	// variant. The bundle must not be saved; the user should see a
+	// clear error and rerun rather than silently get a malformed
+	// regen artifact in their session.
+	resp := `{
+	  "drafts": [
+	    {"id":"best","label":"best","text":"x","reasoning":"r"},
+	    {"id":"shorter","label":"shorter","text":"y","reasoning":"r"}
+	  ],
+	  "pick_id": "best"
+	}`
+	p := &fakeProvider{name: "fake", response: resp}
+
+	_, err := GenerateReplyRegen(context.Background(), p, "gpt-5", sampleRegenInput(), 0)
+	if err == nil {
+		t.Fatal("expected error for 2 drafts when 3 are required")
+	}
+	if !strings.Contains(err.Error(), "expected 3 drafts") || !strings.Contains(err.Error(), "got 2") {
+		t.Errorf("expected count-mismatch error, got %v", err)
+	}
+}
+
+func TestGenerateReplyRegenRejectsExtraDraft(t *testing.T) {
+	// Four drafts (model leaked a `counterpoint` from the original
+	// drafter's vocabulary). Same reject-and-fail-loud expectation.
+	resp := `{
+	  "drafts": [
+	    {"id":"best","label":"best","text":"x","reasoning":"r"},
+	    {"id":"shorter","label":"shorter","text":"y","reasoning":"r"},
+	    {"id":"question","label":"question","text":"z","reasoning":"r"},
+	    {"id":"counterpoint","label":"counterpoint","text":"w","reasoning":"r"}
+	  ],
+	  "pick_id": "best"
+	}`
+	p := &fakeProvider{name: "fake", response: resp}
+
+	_, err := GenerateReplyRegen(context.Background(), p, "gpt-5", sampleRegenInput(), 0)
+	if err == nil {
+		t.Fatal("expected error for 4 drafts")
+	}
+	if !strings.Contains(err.Error(), "got 4") {
+		t.Errorf("expected count-mismatch error, got %v", err)
+	}
+}
+
+func TestGenerateReplyRegenRejectsUnexpectedID(t *testing.T) {
+	// Right count, wrong ID — `warmer-personal` belongs to the
+	// initial drafter's vocabulary and isn't part of the v1 stable
+	// regen set. Validator must reject so downstream tooling that
+	// assumes {best, shorter, question} stays sound.
+	resp := `{
+	  "drafts": [
+	    {"id":"best","label":"best","text":"x","reasoning":"r"},
+	    {"id":"shorter","label":"shorter","text":"y","reasoning":"r"},
+	    {"id":"warmer-personal","label":"warmer-personal","text":"z","reasoning":"r"}
+	  ],
+	  "pick_id": "best"
+	}`
+	p := &fakeProvider{name: "fake", response: resp}
+
+	_, err := GenerateReplyRegen(context.Background(), p, "gpt-5", sampleRegenInput(), 0)
+	if err == nil {
+		t.Fatal("expected error for unexpected draft id")
+	}
+	if !strings.Contains(err.Error(), `missing required draft id "question"`) {
+		t.Errorf("expected missing-question error, got %v", err)
+	}
+}
+
+func TestGenerateReplyRegenRejectsDuplicateID(t *testing.T) {
+	// Three drafts but two share an id. Validator catches this so a
+	// regen artifact can't pretend to satisfy the contract while
+	// silently dropping a variant.
+	resp := `{
+	  "drafts": [
+	    {"id":"best","label":"best","text":"x","reasoning":"r"},
+	    {"id":"best","label":"best","text":"x2","reasoning":"r"},
+	    {"id":"question","label":"question","text":"z","reasoning":"r"}
+	  ],
+	  "pick_id": "best"
+	}`
+	p := &fakeProvider{name: "fake", response: resp}
+
+	_, err := GenerateReplyRegen(context.Background(), p, "gpt-5", sampleRegenInput(), 0)
+	if err == nil {
+		t.Fatal("expected error for duplicate draft id")
+	}
+	if !strings.Contains(err.Error(), `duplicate draft id "best"`) {
+		t.Errorf("expected duplicate-id error, got %v", err)
 	}
 }
 
