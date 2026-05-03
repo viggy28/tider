@@ -125,6 +125,92 @@ func TestAppendHistoryEventCreatesAndAppends(t *testing.T) {
 	}
 }
 
+func TestSaveRegenSameSecondNoOverwrite(t *testing.T) {
+	// Two regens with identical Generated timestamps must not clobber
+	// each other. Whole-second filename precision is fine for the
+	// common case but breaks the auditable append-only contract when
+	// runs land in the same second (codex P1 on PR #42). The collision
+	// suffix (-2, -3, ...) preserves both artifacts.
+	root := t.TempDir()
+	s, err := NewSession(root, "shopify", "abc", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gen := time.Date(2026, 5, 2, 21, 37, 10, 0, time.UTC)
+	first := &types.ReplyRegen{
+		SessionID: filepath.Base(s.Path()),
+		Generated: gen,
+		Note:      "first",
+		Bundle: &types.ReplyBundle{
+			Mode:   types.ReplyModeReply,
+			Drafts: []types.ReplyDraft{{ID: "best", Label: "best", Text: "FIRST"}},
+		},
+	}
+	second := &types.ReplyRegen{
+		SessionID: filepath.Base(s.Path()),
+		Generated: gen,
+		Note:      "second",
+		Bundle: &types.ReplyBundle{
+			Mode:   types.ReplyModeReply,
+			Drafts: []types.ReplyDraft{{ID: "best", Label: "best", Text: "SECOND"}},
+		},
+	}
+
+	rel1, err := s.SaveRegen(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel2, err := s.SaveRegen(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if rel1 == rel2 {
+		t.Fatalf("same-second regens collided on %q — append-only contract broken", rel1)
+	}
+
+	// The first run gets the unsuffixed slot, the second run gets -2 —
+	// matches the NewSession idiom for predictability.
+	wantFirst := "regens/2026-05-02T21-37-10Z.json"
+	wantSecond := "regens/2026-05-02T21-37-10Z-2.json"
+	if rel1 != wantFirst {
+		t.Errorf("first regen path = %q, want %q", rel1, wantFirst)
+	}
+	if rel2 != wantSecond {
+		t.Errorf("second regen path = %q, want %q", rel2, wantSecond)
+	}
+
+	// Both artifacts must exist and carry the right content — proving
+	// neither overwrote the other.
+	var got1, got2 types.ReplyRegen
+	if err := s.LoadJSON(rel1, &got1); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.LoadJSON(rel2, &got2); err != nil {
+		t.Fatal(err)
+	}
+	if got1.Bundle.Drafts[0].Text != "FIRST" || got2.Bundle.Drafts[0].Text != "SECOND" {
+		t.Errorf("artifact contents wrong: rel1=%q rel2=%q", got1.Bundle.Drafts[0].Text, got2.Bundle.Drafts[0].Text)
+	}
+
+	// And a third run lands at -3, demonstrating the suffix counter
+	// keeps incrementing.
+	third := &types.ReplyRegen{
+		SessionID: filepath.Base(s.Path()),
+		Generated: gen,
+		Note:      "third",
+		Bundle:    &types.ReplyBundle{Mode: types.ReplyModeReply, Drafts: []types.ReplyDraft{{ID: "best", Text: "T"}}},
+	}
+	rel3, err := s.SaveRegen(third)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel3 != "regens/2026-05-02T21-37-10Z-3.json" {
+		t.Errorf("third regen path = %q, want -3 suffix", rel3)
+	}
+}
+
 func TestSaveRegenDoesNotTouchOriginalDrafts(t *testing.T) {
 	// v1 contract: regen never overwrites drafts.json. Write a sentinel
 	// drafts.json, then save a regen, then verify drafts.json is byte-
