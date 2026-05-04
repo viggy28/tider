@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	anthropicDefaultBaseURL = "https://api.anthropic.com"
-	anthropicAPIVersion     = "2023-06-01"
+	anthropicDefaultBaseURL  = "https://api.anthropic.com"
+	anthropicAPIVersion      = "2023-06-01"
 	anthropicJSONInstruction = "Respond with a single valid JSON value only. No prose, no markdown fences, no commentary."
 )
 
@@ -139,11 +139,13 @@ func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error
 	respBody, _ := io.ReadAll(httpResp.Body)
 
 	if httpResp.StatusCode != http.StatusOK {
+		herr := &HTTPError{Provider: "anthropic", StatusCode: httpResp.StatusCode, Body: string(respBody)}
 		var ae anthropicErrorResponse
 		if err := json.Unmarshal(respBody, &ae); err == nil && ae.Error.Message != "" {
-			return nil, fmt.Errorf("anthropic %d %s: %s", httpResp.StatusCode, ae.Error.Type, ae.Error.Message)
+			herr.ErrType = ae.Error.Type
+			herr.Message = ae.Error.Message
 		}
-		return nil, fmt.Errorf("anthropic %d: %s", httpResp.StatusCode, string(respBody))
+		return nil, herr
 	}
 
 	var resp anthropicResponse

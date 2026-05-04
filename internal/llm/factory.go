@@ -16,18 +16,29 @@ type TaskConfig struct {
 	Model    string
 }
 
-// New constructs the provider implied by cfg.
+// New constructs the provider implied by cfg, wrapped with retry on
+// transient 5xx + 429 responses so every call site (draft, regen,
+// classifier, intake, research) is resilient to upstream provider
+// hiccups without needing per-caller retry plumbing.
 func New(cfg Config) (Provider, error) {
+	var (
+		p   Provider
+		err error
+	)
 	switch cfg.Provider {
 	case "anthropic":
-		return NewAnthropic(cfg.Model)
+		p, err = NewAnthropic(cfg.Model)
 	case "openai":
-		return NewOpenAI(cfg.Model)
+		p, err = NewOpenAI(cfg.Model)
 	case "":
 		return nil, fmt.Errorf("llm: provider not configured")
 	default:
 		return nil, fmt.Errorf("llm: unknown provider %q", cfg.Provider)
 	}
+	if err != nil {
+		return nil, err
+	}
+	return WithRetry(p), nil
 }
 
 // ForTask returns the provider for a named task, falling back to the base

@@ -25,6 +25,17 @@ var firecrawlAPIBase = "https://api.firecrawl.dev"
 // few seconds per page. 60s is conservative.
 const firecrawlScrapeTimeout = 60 * time.Second
 
+// Retry policy for transient Firecrawl failures (5xx + 429). Mirrors
+// internal/reddit/client.go: 3 retries, 500ms exponential base.
+// SCRAPE_SITE_ERROR / ERR_ABORTED comes back as a 500 — usually a
+// transient browser-load failure that succeeds on retry. Tunable as
+// vars so tests can shrink the delay; production defaults stay constant
+// for the lifetime of a binary.
+var (
+	firecrawlMaxRetry  = 3
+	firecrawlBaseDelay = 500 * time.Millisecond
+)
+
 // firecrawlScreenshotMaxBytes caps the screenshot download. Real
 // full-page screenshots from Firecrawl average 200KB-2MB depending on
 // page complexity; cap protects against pathological cases.
@@ -61,32 +72,10 @@ func InspectFirecrawl(ctx context.Context, client *http.Client, apiKey, target s
 	}
 
 	scrapeURL := firecrawlAPIBase + "/v1/scrape"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, scrapeURL, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("firecrawl: build request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
-	httpReq.Header.Set("User-Agent", inspectUserAgent)
 
-	resp, err := client.Do(httpReq)
+	respBody, err := firecrawlScrapeWithRetry(ctx, client, scrapeURL, bodyBytes, apiKey)
 	if err != nil {
-		return nil, fmt.Errorf("firecrawl: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 4*1024*1024))
-	if err != nil {
-		return nil, fmt.Errorf("firecrawl: read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		// Sanitize: include status + truncated body, never the auth header.
-		short := string(respBody)
-		if len(short) > 400 {
-			short = short[:400] + "..."
-		}
-		return nil, fmt.Errorf("firecrawl: status %d: %s", resp.StatusCode, strings.TrimSpace(short))
+		return nil, err
 	}
 
 	var parsed firecrawlScrapeResp
@@ -124,6 +113,59 @@ func InspectFirecrawl(ctx context.Context, client *http.Client, apiKey, target s
 	insp.ImageURLs = imageURLsFromMarkdown(parsed.Data.Markdown)
 
 	return insp, nil
+}
+
+// firecrawlScrapeWithRetry POSTs to /v1/scrape and retries on transient
+// upstream failures (5xx + 429). Same backoff shape as
+// internal/reddit/client.go. The auth key is set fresh each attempt and
+// never appears in returned error strings.
+func firecrawlScrapeWithRetry(ctx context.Context, client *http.Client, scrapeURL string, bodyBytes []byte, apiKey string) ([]byte, error) {
+	var lastErr error
+	for attempt := 0; attempt <= firecrawlMaxRetry; attempt++ {
+		if attempt > 0 {
+			delay := firecrawlBaseDelay << (attempt - 1)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, scrapeURL, bytes.NewReader(bodyBytes))
+		if err != nil {
+			return nil, fmt.Errorf("firecrawl: build request: %w", err)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+		httpReq.Header.Set("User-Agent", inspectUserAgent)
+
+		resp, err := client.Do(httpReq)
+		if err != nil {
+			// Transport errors (connection reset, client timeout) are
+			// terminal: we can't tell if the server already accepted the
+			// request, and a retry could double-bill the scrape.
+			// Idempotent retry only kicks in on explicit 5xx + 429 below.
+			return nil, fmt.Errorf("firecrawl: %w", err)
+		}
+		respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 4*1024*1024))
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("firecrawl: read response: %w", readErr)
+		}
+		if resp.StatusCode == http.StatusOK {
+			return respBody, nil
+		}
+		short := strings.TrimSpace(string(respBody))
+		if len(short) > 400 {
+			short = short[:400] + "..."
+		}
+		statusErr := fmt.Errorf("firecrawl: status %d: %s", resp.StatusCode, short)
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			lastErr = statusErr
+			continue
+		}
+		return nil, statusErr
+	}
+	return nil, fmt.Errorf("firecrawl: exhausted retries: %w", lastErr)
 }
 
 // DownloadScreenshot fetches the screenshot URL into destDir as a PNG
@@ -193,16 +235,16 @@ type firecrawlScrapeReq struct {
 }
 
 type firecrawlScrapeResp struct {
-	Success bool             `json:"success"`
-	Data    firecrawlData    `json:"data"`
-	Error   string           `json:"error,omitempty"`
+	Success bool          `json:"success"`
+	Data    firecrawlData `json:"data"`
+	Error   string        `json:"error,omitempty"`
 }
 
 type firecrawlData struct {
-	Markdown   string             `json:"markdown"`
-	Links      []string           `json:"links"`
-	Screenshot string             `json:"screenshot"`
-	Metadata   firecrawlMetadata  `json:"metadata"`
+	Markdown   string            `json:"markdown"`
+	Links      []string          `json:"links"`
+	Screenshot string            `json:"screenshot"`
+	Metadata   firecrawlMetadata `json:"metadata"`
 }
 
 type firecrawlMetadata struct {
