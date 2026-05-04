@@ -285,10 +285,39 @@ func resolvePostSource(ctx context.Context, cfg *config.Config, stdin *os.File) 
 func newIntakeProvider(cfg *config.Config) (postIntake, error) {
 	provider, model, maxTokens := cfg.ForTask("intake")
 	p, err := llm.New(llm.Config{Provider: provider, Model: model})
-	if err != nil {
-		return postIntake{}, err
+	if err == nil {
+		return postIntake{p: p, maxTokens: maxTokens}, nil
 	}
+	// Fall back to the other provider when the configured intake
+	// provider's key isn't set. Without this a single-provider user
+	// (only ANTHROPIC_API_KEY, default intake → openai) hits a hard
+	// fail at --file/--url before drafting even runs, which
+	// contradicts the rest of post's "missing key → skip with warning"
+	// behavior. Codex P1 finding from PR #48 review.
+	altProvider, altModel := otherIntakeProvider(provider, cfg)
+	if altProvider == "" {
+		return postIntake{}, fmt.Errorf("intake: %w", err)
+	}
+	p, altErr := llm.New(llm.Config{Provider: altProvider, Model: altModel})
+	if altErr != nil {
+		return postIntake{}, fmt.Errorf("intake: no usable provider — set ANTHROPIC_API_KEY or OPENAI_API_KEY")
+	}
+	fmt.Fprintf(os.Stderr, "intake: %s key missing, falling back to %s\n", provider, altProvider)
 	return postIntake{p: p, maxTokens: maxTokens}, nil
+}
+
+// otherIntakeProvider returns the cross-provider name + its configured
+// model for use when the primary intake provider's key is missing.
+// Returns ("", "") for unknown primaries (no fallback attempted).
+func otherIntakeProvider(current string, cfg *config.Config) (string, string) {
+	switch current {
+	case "openai":
+		return "anthropic", cfg.LLM.AnthropicModel
+	case "anthropic":
+		return "openai", cfg.LLM.OpenAIModel
+	default:
+		return "", ""
+	}
 }
 
 type postIntake struct {

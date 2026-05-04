@@ -179,6 +179,57 @@ func TestResolvePostSourceFromBriefJSON(t *testing.T) {
 	}
 }
 
+func TestNewIntakeProviderFallsBackWhenPrimaryKeyMissing(t *testing.T) {
+	// Default intake task points to openai (gpt-4o-mini). With only
+	// ANTHROPIC_API_KEY set, the fallback should kick in instead of
+	// hard-failing — that's the Codex P1 fix on PR #48.
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("ANTHROPIC_API_KEY", "test-anthropic")
+
+	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Provider:       "openai",
+			Model:          "gpt-5",
+			AnthropicModel: "claude-sonnet-4-7",
+			OpenAIModel:    "gpt-5",
+			Tasks: map[string]config.TaskConfig{
+				"intake": {Model: "gpt-4o-mini", MaxTokens: 8192},
+			},
+		},
+	}
+	ip, err := newIntakeProvider(cfg)
+	if err != nil {
+		t.Fatalf("expected fallback to anthropic, got error: %v", err)
+	}
+	if ip.p == nil || ip.p.Name() != "anthropic" {
+		t.Errorf("expected anthropic provider; got %v", ip.p)
+	}
+}
+
+func TestNewIntakeProviderErrorsWhenAllKeysMissing(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+
+	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Provider:       "openai",
+			Model:          "gpt-5",
+			AnthropicModel: "claude-sonnet-4-7",
+			OpenAIModel:    "gpt-5",
+			Tasks: map[string]config.TaskConfig{
+				"intake": {Model: "gpt-4o-mini"},
+			},
+		},
+	}
+	_, err := newIntakeProvider(cfg)
+	if err == nil {
+		t.Fatal("expected error when no provider keys are set")
+	}
+	if !strings.Contains(err.Error(), "no usable provider") {
+		t.Errorf("error should explain no usable provider; got %v", err)
+	}
+}
+
 func TestIsStdinPipedDetectsPipe(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
