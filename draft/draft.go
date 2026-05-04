@@ -33,6 +33,21 @@ type Options struct {
 	AuthorContext string
 }
 
+// Input bundles everything one Generate call needs. Contexts and
+// OperatorNote are new in the post one-step UX: contexts carry
+// background project material loaded via --context, OperatorNote carries
+// the operator's intent passed via --note or stdin (treated as
+// instruction, not source material). Both are optional — a brief
+// extracted from --file or --url with no contexts and no note still
+// renders cleanly.
+type Input struct {
+	Brief        types.Brief
+	Research     types.Research
+	Contexts     []types.LoadedReplyContext
+	OperatorNote string
+	Opts         Options
+}
+
 // Default is the spec's "2 angles × 3 titles × 2 bodies" — ~12 artifacts.
 // MaxTokens sized for reasoning models (gpt-5, o-series): real-run usage
 // has been ~5K output tokens, so 10K leaves headroom for reasoning.
@@ -63,8 +78,8 @@ type ProviderRef = llm.ProviderRef
 
 // RenderPrompt produces the user-facing prompt the LLM will see. Exposed
 // so `--dry-run` can print it without burning a real API call.
-func RenderPrompt(brief types.Brief, research types.Research, opts Options) (string, error) {
-	if opts.AngleCount <= 0 || opts.TitlesPerAngle <= 0 || opts.BodiesPerAngle <= 0 {
+func RenderPrompt(in Input) (string, error) {
+	if in.Opts.AngleCount <= 0 || in.Opts.TitlesPerAngle <= 0 || in.Opts.BodiesPerAngle <= 0 {
 		return "", fmt.Errorf("draft: variant counts must be > 0")
 	}
 	var buf bytes.Buffer
@@ -79,25 +94,29 @@ func RenderPrompt(brief types.Brief, research types.Research, opts Options) (str
 		Stickies       []types.Post
 		Flairs         []types.Flair
 		Brief          types.Brief
+		Contexts       []types.LoadedReplyContext
+		OperatorNote   string
 		AngleCount     int
 		TitlesPerAngle int
 		BodiesPerAngle int
 		AuthorContext  string
 	}{
-		SubName:        research.Sub.Name,
-		Subscribers:    research.Sub.Subscribers,
-		CuratedNotes:   research.Notes,
-		Rules:          research.Rules,
-		TopWeek:        research.TopWeek,
-		TopMonth:       research.TopMonth,
-		Hot:            research.Hot,
-		Stickies:       research.Stickies,
-		Flairs:         research.Flairs,
-		Brief:          brief,
-		AngleCount:     opts.AngleCount,
-		TitlesPerAngle: opts.TitlesPerAngle,
-		BodiesPerAngle: opts.BodiesPerAngle,
-		AuthorContext:  opts.AuthorContext,
+		SubName:        in.Research.Sub.Name,
+		Subscribers:    in.Research.Sub.Subscribers,
+		CuratedNotes:   in.Research.Notes,
+		Rules:          in.Research.Rules,
+		TopWeek:        in.Research.TopWeek,
+		TopMonth:       in.Research.TopMonth,
+		Hot:            in.Research.Hot,
+		Stickies:       in.Research.Stickies,
+		Flairs:         in.Research.Flairs,
+		Brief:          in.Brief,
+		Contexts:       in.Contexts,
+		OperatorNote:   in.OperatorNote,
+		AngleCount:     in.Opts.AngleCount,
+		TitlesPerAngle: in.Opts.TitlesPerAngle,
+		BodiesPerAngle: in.Opts.BodiesPerAngle,
+		AuthorContext:  in.Opts.AuthorContext,
 	})
 	if err != nil {
 		return "", fmt.Errorf("render draft prompt: %w", err)
@@ -108,11 +127,11 @@ func RenderPrompt(brief types.Brief, research types.Research, opts Options) (str
 // Generate fans out across providers concurrently and returns the bundle.
 // Per-provider errors are recorded on the Draft (not propagated) so a
 // transient failure in one provider doesn't kill the whole comparison.
-func Generate(ctx context.Context, refs []ProviderRef, brief types.Brief, research types.Research, opts Options) (*types.DraftBundle, error) {
+func Generate(ctx context.Context, refs []ProviderRef, in Input) (*types.DraftBundle, error) {
 	if len(refs) == 0 {
 		return nil, errors.New("draft: at least one provider required")
 	}
-	prompt, err := RenderPrompt(brief, research, opts)
+	prompt, err := RenderPrompt(in)
 	if err != nil {
 		return nil, err
 	}
@@ -123,14 +142,14 @@ func Generate(ctx context.Context, refs []ProviderRef, brief types.Brief, resear
 		wg.Add(1)
 		go func(i int, ref ProviderRef) {
 			defer wg.Done()
-			drafts[i] = generateOne(ctx, ref, research.Sub.Name, prompt, opts.MaxTokens)
+			drafts[i] = generateOne(ctx, ref, in.Research.Sub.Name, prompt, in.Opts.MaxTokens)
 		}(i, ref)
 	}
 	wg.Wait()
 
 	return &types.DraftBundle{
-		Sub:       research.Sub.Name,
-		Brief:     brief,
+		Sub:       in.Research.Sub.Name,
+		Brief:     in.Brief,
 		Drafts:    drafts,
 		Generated: time.Now().UTC(),
 	}, nil
@@ -168,13 +187,13 @@ func parseInto(d *types.Draft, raw string) error {
 		return errors.New("empty response")
 	}
 	var payload struct {
-		Risk                string                `json:"risk"`
-		RiskReason          string                `json:"risk_reason"`
-		Angles              []types.Angle         `json:"angles"`
-		Recommendation      types.Recommendation  `json:"recommendation"`
-		Flair               types.FlairRec        `json:"flair"`
-		SuggestedWindow     string                `json:"suggested_window"`
-		MediaRecommendation string                `json:"media_recommendation"`
+		Risk                string               `json:"risk"`
+		RiskReason          string               `json:"risk_reason"`
+		Angles              []types.Angle        `json:"angles"`
+		Recommendation      types.Recommendation `json:"recommendation"`
+		Flair               types.FlairRec       `json:"flair"`
+		SuggestedWindow     string               `json:"suggested_window"`
+		MediaRecommendation string               `json:"media_recommendation"`
 	}
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
 		return fmt.Errorf("parse draft json: %w (model returned: %q)", err, truncate(raw, 200))

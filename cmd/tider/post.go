@@ -12,16 +12,23 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/viggy28/tider/config"
+	"github.com/viggy28/tider/contextbank"
 	"github.com/viggy28/tider/draft"
+	"github.com/viggy28/tider/intake"
 	"github.com/viggy28/tider/internal/llm"
 	"github.com/viggy28/tider/internal/reddit"
 	"github.com/viggy28/tider/internal/types"
 	"github.com/viggy28/tider/lastdraft"
+	"github.com/viggy28/tider/reply"
 	"github.com/viggy28/tider/research"
 )
 
 var (
 	postBriefPath  string
+	postNote       string
+	postFile       string
+	postURL        string
+	postContexts   []string
 	postSub        string
 	postProviders  string
 	postAnthropic  string
@@ -37,132 +44,307 @@ var (
 
 var postCmd = &cobra.Command{
 	Use:   "post",
-	Short: "Draft a Reddit submission (fan-out across providers) for a Brief on one subreddit",
-	Long: `post turns a Brief + per-sub research into structured post drafts. By
-default it fans out across both Anthropic and OpenAI concurrently so you
-can compare framings side-by-side.
+	Short: "Draft a Reddit submission for a subreddit (one-step from --note, stdin, --file, or --url)",
+	Long: `post turns operator intent or source material plus per-sub research into
+structured post drafts, fanning out across providers so framings are
+side-by-side comparable.
 
-  tider post --brief=brief.json --sub=golang
-  tider post --brief=brief.json --sub=PostgreSQL --providers=anthropic
-  tider post --brief=brief.json --sub=golang --render=markdown
-  tider post --brief=brief.json --sub=golang --dry-run    # show prompt only
+Source input — exactly one is required:
+
+  --note "..."      operator intent (raw, no extraction)
+  stdin             piped content (raw, no extraction); e.g. pbpaste | tider post --sub=…
+  --file=path       local file (extracted via LLM)
+  --url=https://…   remote URL (extracted via LLM)
+  --brief=path      pre-built Brief JSON (advanced — output of ` + "`tider intake`" + `)
+
+Reusable background context (repeatable):
+
+  --context=<id>    name in the context bank (~/.tider/contexts/<id>.md)
+  --context=path/to/file.md
+
+  tider post --sub=EtsySellers --note="Ask sellers whether AI listing images hurt buyer trust. Don't pitch Kova." --context=kova
+  pbpaste | tider post --sub=EtsySellers --context=kova
+  tider post --sub=EtsySellers --file=./notes.md
+  tider post --sub=EtsySellers --url=https://example.com/source
 
 API keys come from env vars: ANTHROPIC_API_KEY, OPENAI_API_KEY. Providers
 without a key are skipped with a warning rather than failing the run.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if postBriefPath == "" || postSub == "" {
-			return errors.New("--brief and --sub are required")
-		}
-		brief, err := loadBrief(postBriefPath)
-		if err != nil {
-			return err
-		}
-
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("home dir: %w", err)
-		}
-		cacheRoot := postCacheRoot
-		if cacheRoot == "" {
-			cacheRoot = filepath.Join(home, ".tider", "cache")
-		}
-		notesPath := postNotesPath
-		if notesPath == "" {
-			notesPath = filepath.Join(home, ".tider", "subreddits.yaml")
-		}
-
-		notes, err := research.LoadNotes(notesPath)
-		if err != nil {
-			return err
-		}
-		client := reddit.NewClient(reddit.NewCache(cacheRoot))
-		ctx := context.Background()
-		researchBundle, err := research.For(ctx, client, notes, postSub, postRefresh)
-		if err != nil {
-			return fmt.Errorf("research %s: %w", postSub, err)
-		}
-
-		cfg, err := config.Load()
-		if err != nil {
-			return err
-		}
-		_, _, cfgMaxTokens := cfg.FanOutModels("post")
-
-		opts := draft.Default()
-		if postVariantSet == "full" {
-			opts = draft.Full()
-		}
-		// Resolve max_tokens: explicit flag wins, then config, then opts default.
-		if postMaxTokens > 0 {
-			opts.MaxTokens = postMaxTokens
-		} else if cfgMaxTokens > 0 {
-			opts.MaxTokens = cfgMaxTokens
-		}
-		opts.AuthorContext = cfg.AuthorContext
-
-		if postDryRun {
-			prompt, err := draft.RenderPrompt(*brief, *researchBundle, opts)
-			if err != nil {
-				return err
-			}
-			fmt.Println(prompt)
-			return nil
-		}
-
-		// Resolve fan-out provider list and per-provider models with config fallback.
-		providers := postProviders
-		if providers == "" {
-			providers = cfg.Defaults.Providers
-		}
-		anthropicModel := postAnthropic
-		openaiModel := postOpenAI
-		if anthropicModel == "" {
-			anthropicModel = cfg.LLM.AnthropicModel
-		}
-		if openaiModel == "" {
-			openaiModel = cfg.LLM.OpenAIModel
-		}
-		refs, err := buildProviderRefs(providers, anthropicModel, openaiModel)
-		if err != nil {
-			return err
-		}
-		if len(refs) == 0 {
-			return errors.New("no usable providers — set ANTHROPIC_API_KEY and/or OPENAI_API_KEY")
-		}
-
-		bundle, err := draft.Generate(ctx, refs, *brief, *researchBundle, opts)
-		if err != nil {
-			return err
-		}
-
-		// Persist snapshot so `tider regen` can pick up where we left off.
-		// A failure here shouldn't block the user from seeing the bundle —
-		// log to stderr and proceed.
-		if root, derr := lastdraft.Default(); derr == nil {
-			snap := &types.Snapshot{Brief: *brief, Research: *researchBundle, Bundle: *bundle}
-			if serr := lastdraft.Save(root, postSub, snap); serr != nil {
-				fmt.Fprintf(os.Stderr, "warning: failed to save last-draft snapshot: %v\n", serr)
-			}
-		}
-
-		switch resolveRender(postRender) {
-		case "markdown":
-			md := draft.RenderMarkdown(bundle)
-			if isTerminal(os.Stdout) {
-				md = renderTerminal(md)
-			}
-			fmt.Print(md)
-		case "json":
-			out, err := json.MarshalIndent(bundle, "", "  ")
-			if err != nil {
-				return err
-			}
-			fmt.Println(string(out))
-		default:
-			return fmt.Errorf("unknown --render value: %s (use json or markdown)", postRender)
-		}
-		return nil
+		return runPost(cmd.Context(), os.Stdin)
 	},
+}
+
+func runPost(ctx context.Context, stdin *os.File) error {
+	if postSub == "" {
+		return errors.New("--sub is required")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+
+	brief, operatorNote, err := resolvePostSource(ctx, cfg, stdin)
+	if err != nil {
+		return err
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("home dir: %w", err)
+	}
+	cacheRoot := postCacheRoot
+	if cacheRoot == "" {
+		cacheRoot = filepath.Join(home, ".tider", "cache")
+	}
+	notesPath := postNotesPath
+	if notesPath == "" {
+		notesPath = filepath.Join(home, ".tider", "subreddits.yaml")
+	}
+
+	notes, err := research.LoadNotes(notesPath)
+	if err != nil {
+		return err
+	}
+	client := reddit.NewClient(reddit.NewCache(cacheRoot))
+	researchBundle, err := research.For(ctx, client, notes, postSub, postRefresh)
+	if err != nil {
+		return fmt.Errorf("research %s: %w", postSub, err)
+	}
+
+	bankDir, err := contextbank.DefaultDir()
+	if err != nil {
+		return err
+	}
+	contexts, err := reply.LoadContexts(bankDir, postContexts)
+	if err != nil {
+		return err
+	}
+
+	_, _, cfgMaxTokens := cfg.FanOutModels("post")
+
+	opts := draft.Default()
+	if postVariantSet == "full" {
+		opts = draft.Full()
+	}
+	if postMaxTokens > 0 {
+		opts.MaxTokens = postMaxTokens
+	} else if cfgMaxTokens > 0 {
+		opts.MaxTokens = cfgMaxTokens
+	}
+	opts.AuthorContext = cfg.AuthorContext
+
+	in := draft.Input{
+		Brief:        *brief,
+		Research:     *researchBundle,
+		Contexts:     contexts,
+		OperatorNote: operatorNote,
+		Opts:         opts,
+	}
+
+	if postDryRun {
+		prompt, err := draft.RenderPrompt(in)
+		if err != nil {
+			return err
+		}
+		fmt.Println(prompt)
+		return nil
+	}
+
+	providers := postProviders
+	if providers == "" {
+		providers = cfg.Defaults.Providers
+	}
+	anthropicModel := postAnthropic
+	openaiModel := postOpenAI
+	if anthropicModel == "" {
+		anthropicModel = cfg.LLM.AnthropicModel
+	}
+	if openaiModel == "" {
+		openaiModel = cfg.LLM.OpenAIModel
+	}
+	refs, err := buildProviderRefs(providers, anthropicModel, openaiModel)
+	if err != nil {
+		return err
+	}
+	if len(refs) == 0 {
+		return errors.New("no usable providers — set ANTHROPIC_API_KEY and/or OPENAI_API_KEY")
+	}
+
+	bundle, err := draft.Generate(ctx, refs, in)
+	if err != nil {
+		return err
+	}
+
+	if root, derr := lastdraft.Default(); derr == nil {
+		snap := &types.Snapshot{Brief: *brief, Research: *researchBundle, Bundle: *bundle}
+		if serr := lastdraft.Save(root, postSub, snap); serr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to save last-draft snapshot: %v\n", serr)
+		}
+	}
+
+	switch resolveRender(postRender) {
+	case "markdown":
+		md := draft.RenderMarkdown(bundle)
+		if isTerminal(os.Stdout) {
+			md = renderTerminal(md)
+		}
+		fmt.Print(md)
+	case "json":
+		out, err := json.MarshalIndent(bundle, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(out))
+	default:
+		return fmt.Errorf("unknown --render value: %s (use json or markdown)", postRender)
+	}
+	return nil
+}
+
+// resolvePostSource picks the single allowed source input and returns
+// the resulting Brief plus the operator-note string (empty for
+// --file/--url/--brief because those go through extraction). Stdin is
+// used only when no source flag is set and stdin is piped — an
+// interactive shell is treated as "no source" so we can fail with a
+// usage message instead of blocking on a tty.
+func resolvePostSource(ctx context.Context, cfg *config.Config, stdin *os.File) (*types.Brief, string, error) {
+	sources := []string{}
+	if postNote != "" {
+		sources = append(sources, "--note")
+	}
+	if postFile != "" {
+		sources = append(sources, "--file")
+	}
+	if postURL != "" {
+		sources = append(sources, "--url")
+	}
+	if postBriefPath != "" {
+		sources = append(sources, "--brief")
+	}
+	stdinPiped := isStdinPiped(stdin)
+	if len(sources) == 0 && stdinPiped {
+		sources = append(sources, "stdin")
+	}
+
+	switch len(sources) {
+	case 0:
+		return nil, "", errors.New("provide a source: --note, stdin (piped), --file, --url, or --brief")
+	case 1:
+		// proceed
+	default:
+		return nil, "", fmt.Errorf("only one source may be set; got %s", strings.Join(sources, ", "))
+	}
+
+	switch sources[0] {
+	case "--note":
+		b, err := intake.FromNote(postNote)
+		if err != nil {
+			return nil, "", err
+		}
+		return b, b.Summary, nil
+	case "stdin":
+		b, err := intake.FromStdin(stdin, 256*1024)
+		if err != nil {
+			return nil, "", err
+		}
+		return b, b.Summary, nil
+	case "--file":
+		ip, err := newIntakeProvider(cfg)
+		if err != nil {
+			return nil, "", err
+		}
+		b, err := ip.build().FromFile(ctx, postFile)
+		if err != nil {
+			return nil, "", err
+		}
+		return b, "", nil
+	case "--url":
+		ip, err := newIntakeProvider(cfg)
+		if err != nil {
+			return nil, "", err
+		}
+		b, err := ip.build().FromURL(ctx, postURL)
+		if err != nil {
+			return nil, "", err
+		}
+		return b, "", nil
+	case "--brief":
+		b, err := loadBrief(postBriefPath)
+		if err != nil {
+			return nil, "", err
+		}
+		return b, "", nil
+	}
+	return nil, "", fmt.Errorf("internal: unhandled source %s", sources[0])
+}
+
+func newIntakeProvider(cfg *config.Config) (postIntake, error) {
+	provider, model, maxTokens := cfg.ForTask("intake")
+	p, err := llm.New(llm.Config{Provider: provider, Model: model})
+	if err == nil {
+		return postIntake{p: p, maxTokens: maxTokens}, nil
+	}
+	// Fall back to the other provider when the configured intake
+	// provider's key isn't set. Without this a single-provider user
+	// (only ANTHROPIC_API_KEY, default intake → openai) hits a hard
+	// fail at --file/--url before drafting even runs, which
+	// contradicts the rest of post's "missing key → skip with warning"
+	// behavior. Codex P1 finding from PR #48 review.
+	altProvider, altModel := otherIntakeProvider(provider, cfg)
+	if altProvider == "" {
+		return postIntake{}, fmt.Errorf("intake: %w", err)
+	}
+	p, altErr := llm.New(llm.Config{Provider: altProvider, Model: altModel})
+	if altErr != nil {
+		return postIntake{}, fmt.Errorf("intake: no usable provider — set ANTHROPIC_API_KEY or OPENAI_API_KEY")
+	}
+	fmt.Fprintf(os.Stderr, "intake: %s key missing, falling back to %s\n", provider, altProvider)
+	return postIntake{p: p, maxTokens: maxTokens}, nil
+}
+
+// otherIntakeProvider returns the cross-provider name + its configured
+// model for use when the primary intake provider's key is missing.
+// Returns ("", "") for unknown primaries (no fallback attempted).
+func otherIntakeProvider(current string, cfg *config.Config) (string, string) {
+	switch current {
+	case "openai":
+		return "anthropic", cfg.LLM.AnthropicModel
+	case "anthropic":
+		return "openai", cfg.LLM.OpenAIModel
+	default:
+		return "", ""
+	}
+}
+
+type postIntake struct {
+	p         llm.Provider
+	maxTokens int
+}
+
+func (ip postIntake) build() *intake.Intake {
+	i := intake.New(ip.p)
+	if ip.maxTokens > 0 {
+		i.MaxTokens = ip.maxTokens
+	}
+	return i
+}
+
+// isStdinPiped reports whether stdin is connected to a pipe or
+// redirected file rather than an interactive terminal. Mirrors the
+// idiom in term.go's isTerminal but for stdin.
+func isStdinPiped(f *os.File) bool {
+	if f == nil {
+		return false
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice == 0
 }
 
 func loadBrief(path string) (*types.Brief, error) {
@@ -216,7 +398,11 @@ func buildProviderRefs(providersFlag, anthropicModel, openaiModel string) ([]dra
 }
 
 func init() {
-	postCmd.Flags().StringVar(&postBriefPath, "brief", "", "path to a brief.json (output of `tider intake`)")
+	postCmd.Flags().StringVar(&postBriefPath, "brief", "", "path to a brief.json (advanced — output of `tider intake`)")
+	postCmd.Flags().StringVar(&postNote, "note", "", "inline operator intent; rendered raw without LLM extraction")
+	postCmd.Flags().StringVar(&postFile, "file", "", "local file with source material; LLM-extracted into a Brief")
+	postCmd.Flags().StringVar(&postURL, "url", "", "URL with source material; LLM-extracted into a Brief")
+	postCmd.Flags().StringSliceVar(&postContexts, "context", nil, "context bank id or path; repeatable")
 	postCmd.Flags().StringVar(&postSub, "sub", "", "subreddit name to draft for (e.g., golang)")
 	postCmd.Flags().StringVar(&postProviders, "providers", "", "comma-separated providers to fan out across (default from config)")
 	postCmd.Flags().StringVar(&postAnthropic, "anthropic-model", "", "Anthropic model to use (default from config)")
