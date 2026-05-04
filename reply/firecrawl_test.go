@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // stubFirecrawl returns an httptest server that pretends to be the
@@ -253,6 +255,119 @@ func TestInspectFirecrawlNon200Errors(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "Bearer") || strings.Contains(err.Error(), "test-key") {
 		t.Errorf("error should not leak auth header: %v", err)
+	}
+}
+
+// withFastFirecrawlRetry shrinks the retry delay so retry tests don't
+// sleep the production 500ms+ between attempts.
+func withFastFirecrawlRetry(t *testing.T) {
+	t.Helper()
+	prev := firecrawlBaseDelay
+	firecrawlBaseDelay = 1 * time.Millisecond
+	t.Cleanup(func() { firecrawlBaseDelay = prev })
+}
+
+func TestInspectFirecrawlRetriesOn5xxThenSucceeds(t *testing.T) {
+	withFastFirecrawlRetry(t)
+	resp := firecrawlScrapeResp{
+		Success: true,
+		Data: firecrawlData{
+			Markdown: "# ok",
+			Metadata: firecrawlMetadata{Title: "T", StatusCode: 200},
+		},
+	}
+	var calls atomic.Int32
+	srv := stubFirecrawl(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := calls.Add(1)
+		switch n {
+		case 1:
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"success":false,"code":"SCRAPE_SITE_ERROR","error":"ERR_ABORTED"}`))
+		case 2:
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte("Bad Gateway"))
+		default:
+			_ = json.NewEncoder(w).Encode(resp)
+		}
+	}))
+
+	insp, err := InspectFirecrawl(context.Background(), srv.Client(), "k", "https://x.example.com")
+	if err != nil {
+		t.Fatalf("expected success after retries, got %v", err)
+	}
+	if insp.Title != "T" {
+		t.Errorf("title = %q", insp.Title)
+	}
+	if got := calls.Load(); got != 3 {
+		t.Errorf("calls = %d, want 3", got)
+	}
+}
+
+func TestInspectFirecrawlRetriesExhaustedOn5xx(t *testing.T) {
+	withFastFirecrawlRetry(t)
+	var calls atomic.Int32
+	srv := stubFirecrawl(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"success":false,"code":"SCRAPE_SITE_ERROR","error":"ERR_ABORTED"}`))
+	}))
+
+	_, err := InspectFirecrawl(context.Background(), srv.Client(), "k", "https://x.example.com")
+	if err == nil {
+		t.Fatal("expected error after exhausting retries")
+	}
+	if !strings.Contains(err.Error(), "exhausted retries") {
+		t.Errorf("expected 'exhausted retries' in error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Errorf("expected status 500 surfaced, got %v", err)
+	}
+	// MaxRetry=3 → 1 initial + 3 retries = 4 calls.
+	if got := calls.Load(); got != int32(firecrawlMaxRetry+1) {
+		t.Errorf("calls = %d, want %d", got, firecrawlMaxRetry+1)
+	}
+}
+
+func TestInspectFirecrawlDoesNotRetryOn4xx(t *testing.T) {
+	withFastFirecrawlRetry(t)
+	var calls atomic.Int32
+	srv := stubFirecrawl(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"invalid api key"}`))
+	}))
+
+	_, err := InspectFirecrawl(context.Background(), srv.Client(), "k", "https://x.example.com")
+	if err == nil || !strings.Contains(err.Error(), "401") {
+		t.Errorf("expected 401 error, got %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("4xx should not retry; calls = %d, want 1", got)
+	}
+}
+
+func TestInspectFirecrawlRetriesOn429(t *testing.T) {
+	withFastFirecrawlRetry(t)
+	resp := firecrawlScrapeResp{
+		Success: true,
+		Data:    firecrawlData{Markdown: "# ok", Metadata: firecrawlMetadata{StatusCode: 200}},
+	}
+	var calls atomic.Int32
+	srv := stubFirecrawl(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := calls.Add(1)
+		if n == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte("rate limited"))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+
+	if _, err := InspectFirecrawl(context.Background(), srv.Client(), "k", "https://x.example.com"); err != nil {
+		t.Fatalf("expected success after 429 retry, got %v", err)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Errorf("calls = %d, want 2", got)
 	}
 }
 

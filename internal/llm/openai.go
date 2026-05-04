@@ -184,11 +184,13 @@ func (o *OpenAI) Complete(ctx context.Context, req Request) (*Response, error) {
 	respBody, _ := io.ReadAll(httpResp.Body)
 
 	if httpResp.StatusCode != http.StatusOK {
+		herr := &HTTPError{Provider: "openai", StatusCode: httpResp.StatusCode, Body: string(respBody)}
 		var oe openaiErrorResponse
 		if err := json.Unmarshal(respBody, &oe); err == nil && oe.Error.Message != "" {
-			return nil, fmt.Errorf("openai %d %s: %s", httpResp.StatusCode, oe.Error.Type, oe.Error.Message)
+			herr.ErrType = oe.Error.Type
+			herr.Message = oe.Error.Message
 		}
-		return nil, fmt.Errorf("openai %d: %s", httpResp.StatusCode, string(respBody))
+		return nil, herr
 	}
 
 	var resp openaiResponse

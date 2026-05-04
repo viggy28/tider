@@ -66,8 +66,12 @@ func TestForTaskOverride(t *testing.T) {
 	if p.Name() != "openai" {
 		t.Errorf("override not applied: name = %q", p.Name())
 	}
-	if openai, ok := p.(*OpenAI); !ok || openai.Model != "gpt-5" {
-		t.Errorf("override model not applied: %+v", p)
+	inner := p
+	if rp, ok := p.(*retryProvider); ok {
+		inner = rp.Unwrap()
+	}
+	if openai, ok := inner.(*OpenAI); !ok || openai.Model != "gpt-5" {
+		t.Errorf("override model not applied: %+v", inner)
 	}
 }
 
