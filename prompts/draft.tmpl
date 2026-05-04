@@ -74,7 +74,31 @@ Notes: {{.CuratedNotes.Notes}}
 {{- end }}
 {{- end }}
 
+{{- if .OperatorNote }}
+
+# Operator intent (highest signal — this is what the user wants posted)
+
+{{.OperatorNote}}
+
+Treat the operator intent as the *brief itself*: it tells you what to draft and any constraints to honor (audience, things to avoid, what to lead with). Do not paraphrase or rewrite it as the post body — produce native r/{{.SubName}} drafts that act on the intent.
+{{- end }}
+{{- if .Contexts }}
+
+# Background context (reference material — lower priority than operator intent)
+
+These are the operator's own background notes (project context, prior work, voice/voiceless guardrails). Use them to ground voice and avoid contradicting known facts; do not promote or pitch them unless the operator intent explicitly says to.
+{{- range .Contexts }}
+
+## context: {{.ID}}{{if eq .Source "path"}} ({{.Path}}){{end}}
+{{.Body}}
+{{- end }}
+{{- end }}
+
 # What you're posting about
+{{- if .OperatorNote }}
+
+(See "Operator intent" above. The Brief below is the recorded source descriptor — favor the operator intent when they conflict.)
+{{- end }}
 
 Title: {{.Brief.Title}}
 Summary: {{.Brief.Summary}}
@@ -93,6 +117,14 @@ Reference links:
 - {{.}}
 {{- end }}
 {{- end }}
+
+# Precedence (apply when sources conflict)
+
+1. Subreddit rules and safety constraints
+2. Operator intent (the `--note` / piped input above, if any)
+3. Background context (the `--context` material above, if any)
+4. Subreddit research — recent top posts, hot, curated notes
+5. Default tone and style
 
 # Task
 

@@ -109,22 +109,33 @@ func sampleResearch() types.Research {
 	}
 }
 
+// sampleInput wraps the sample Brief/Research with default opts. Tests
+// override fields (Opts.AuthorContext, OperatorNote, Contexts, etc.)
+// after constructing.
+func sampleInput() Input {
+	return Input{
+		Brief:    sampleBrief(),
+		Research: sampleResearch(),
+		Opts:     Default(),
+	}
+}
+
 func TestRenderPromptIncludesContextAndCounts(t *testing.T) {
-	prompt, err := RenderPrompt(sampleBrief(), sampleResearch(), Default())
+	prompt, err := RenderPrompt(sampleInput())
 	if err != nil {
 		t.Fatal(err)
 	}
 	wantSubstrings := []string{
-		"r/golang",                  // sub header
-		"Some discussion post",      // top post leaked in
-		"terse, hype-allergic",      // curated notes leaked in
-		"Streambed",                 // brief title
-		"Postgres wire protocol",    // highlight
-		"2 *distinct* angles",       // variant count
-		"3 candidate titles",        // titles per angle
-		"2 candidate bodies",        // bodies per angle
-		"Anti-tells",                // anti-tells section present
-		"\"risk\":",                 // output schema present
+		"r/golang",               // sub header
+		"Some discussion post",   // top post leaked in
+		"terse, hype-allergic",   // curated notes leaked in
+		"Streambed",              // brief title
+		"Postgres wire protocol", // highlight
+		"2 *distinct* angles",    // variant count
+		"3 candidate titles",     // titles per angle
+		"2 candidate bodies",     // bodies per angle
+		"Anti-tells",             // anti-tells section present
+		"\"risk\":",              // output schema present
 	}
 	for _, s := range wantSubstrings {
 		if !strings.Contains(prompt, s) {
@@ -134,9 +145,9 @@ func TestRenderPromptIncludesContextAndCounts(t *testing.T) {
 }
 
 func TestRenderPromptIncludesAuthorContextWhenSet(t *testing.T) {
-	opts := Default()
-	opts.AuthorContext = "Five years at Cloudflare leading the Postgres team. Currently building Streambed."
-	prompt, err := RenderPrompt(sampleBrief(), sampleResearch(), opts)
+	in := sampleInput()
+	in.Opts.AuthorContext = "Five years at Cloudflare leading the Postgres team. Currently building Streambed."
+	prompt, err := RenderPrompt(in)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +163,7 @@ func TestRenderPromptIncludesAuthorContextWhenSet(t *testing.T) {
 }
 
 func TestRenderPromptOmitsAuthorContextWhenEmpty(t *testing.T) {
-	prompt, err := RenderPrompt(sampleBrief(), sampleResearch(), Default())
+	prompt, err := RenderPrompt(sampleInput())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,8 +172,60 @@ func TestRenderPromptOmitsAuthorContextWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestRenderPromptIncludesOperatorNoteAndContexts(t *testing.T) {
+	in := sampleInput()
+	in.OperatorNote = "Ask sellers about AI listing images. Don't pitch Kova."
+	in.Contexts = []types.LoadedReplyContext{
+		{ID: "kova", Source: "bank", Body: "Kova is a CDC tool for Postgres."},
+		{ID: "personal", Source: "path", Path: "/home/user/.tider/personal.md", Body: "Five years building infra at Cloudflare."},
+	}
+
+	prompt, err := RenderPrompt(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSubstrings := []string{
+		"Operator intent",
+		"Ask sellers about AI listing images",
+		"Background context",
+		"context: kova",
+		"Kova is a CDC tool",
+		"context: personal",
+		"/home/user/.tider/personal.md",
+		"Five years building infra",
+		"Precedence",
+		"Operator intent",
+		"Background context",
+	}
+	for _, s := range wantSubstrings {
+		if !strings.Contains(prompt, s) {
+			t.Errorf("prompt missing %q", s)
+		}
+	}
+}
+
+func TestRenderPromptOmitsOperatorAndContextSectionsWhenAbsent(t *testing.T) {
+	prompt, err := RenderPrompt(sampleInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The H1 section headers should not render when the inputs are
+	// empty. (The precedence list still mentions them inline by name —
+	// that's intentional, it's the rule.)
+	for _, header := range []string{"# Operator intent", "# Background context"} {
+		if strings.Contains(prompt, header) {
+			t.Errorf("prompt should not contain section header %q when input absent", header)
+		}
+	}
+	if !strings.Contains(prompt, "# Precedence") {
+		t.Error("Precedence section should always render")
+	}
+}
+
 func TestRenderPromptRejectsZeroCounts(t *testing.T) {
-	_, err := RenderPrompt(sampleBrief(), sampleResearch(), Options{AngleCount: 0, TitlesPerAngle: 3, BodiesPerAngle: 2})
+	in := sampleInput()
+	in.Opts = Options{AngleCount: 0, TitlesPerAngle: 3, BodiesPerAngle: 2}
+	_, err := RenderPrompt(in)
 	if err == nil {
 		t.Fatal("expected error for zero AngleCount")
 	}
@@ -176,7 +239,7 @@ func TestGenerateFanOutAcrossProviders(t *testing.T) {
 	bundle, err := Generate(context.Background(), []ProviderRef{
 		{Provider: a, Model: "claude-sonnet-4-7"},
 		{Provider: b, Model: "gpt-5"},
-	}, sampleBrief(), sampleResearch(), Default())
+	}, sampleInput())
 	elapsed := time.Since(start)
 	if err != nil {
 		t.Fatal(err)
@@ -215,7 +278,7 @@ func TestGenerateFanOutAcrossProviders(t *testing.T) {
 }
 
 func TestGenerateRequiresAtLeastOneProvider(t *testing.T) {
-	_, err := Generate(context.Background(), nil, sampleBrief(), sampleResearch(), Default())
+	_, err := Generate(context.Background(), nil, sampleInput())
 	if err == nil {
 		t.Fatal("expected error for empty providers")
 	}
@@ -228,7 +291,7 @@ func TestGenerateRecordsPerProviderError(t *testing.T) {
 	bundle, err := Generate(context.Background(), []ProviderRef{
 		{Provider: good, Model: "claude-sonnet-4-7"},
 		{Provider: bad, Model: "gpt-5"},
-	}, sampleBrief(), sampleResearch(), Default())
+	}, sampleInput())
 	if err != nil {
 		t.Fatalf("bundle should succeed even when one provider fails: %v", err)
 	}
@@ -257,7 +320,7 @@ func TestGenerateRecordsPerProviderError(t *testing.T) {
 
 func TestGenerateBadJSONRecordedAsError(t *testing.T) {
 	p := &fakeProvider{name: "anthropic", response: "not json at all"}
-	bundle, err := Generate(context.Background(), []ProviderRef{{Provider: p, Model: "x"}}, sampleBrief(), sampleResearch(), Default())
+	bundle, err := Generate(context.Background(), []ProviderRef{{Provider: p, Model: "x"}}, sampleInput())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +333,7 @@ func TestGenerateBadJSONRecordedAsError(t *testing.T) {
 func TestGenerateRefusePath(t *testing.T) {
 	const refuseJSON = `{"risk":"refuse","risk_reason":"this sub rejects launch posts","angles":[]}`
 	p := &fakeProvider{name: "anthropic", response: refuseJSON}
-	bundle, err := Generate(context.Background(), []ProviderRef{{Provider: p, Model: "x"}}, sampleBrief(), sampleResearch(), Default())
+	bundle, err := Generate(context.Background(), []ProviderRef{{Provider: p, Model: "x"}}, sampleInput())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +351,7 @@ func TestGenerateRefusePath(t *testing.T) {
 
 func TestGenerateMissingRiskFieldErrors(t *testing.T) {
 	p := &fakeProvider{name: "anthropic", response: `{"angles":[]}`}
-	bundle, err := Generate(context.Background(), []ProviderRef{{Provider: p, Model: "x"}}, sampleBrief(), sampleResearch(), Default())
+	bundle, err := Generate(context.Background(), []ProviderRef{{Provider: p, Model: "x"}}, sampleInput())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +363,7 @@ func TestGenerateMissingRiskFieldErrors(t *testing.T) {
 
 func TestGenerateSendsJSONModeRequest(t *testing.T) {
 	p := &fakeProvider{name: "anthropic", response: cannedDraftJSON}
-	_, err := Generate(context.Background(), []ProviderRef{{Provider: p, Model: "claude-sonnet-4-7"}}, sampleBrief(), sampleResearch(), Default())
+	_, err := Generate(context.Background(), []ProviderRef{{Provider: p, Model: "claude-sonnet-4-7"}}, sampleInput())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +383,7 @@ func TestGenerateSendsJSONModeRequest(t *testing.T) {
 
 func TestTokenUsageRecorded(t *testing.T) {
 	p := &fakeProvider{name: "anthropic", response: cannedDraftJSON}
-	bundle, err := Generate(context.Background(), []ProviderRef{{Provider: p, Model: "x"}}, sampleBrief(), sampleResearch(), Default())
+	bundle, err := Generate(context.Background(), []ProviderRef{{Provider: p, Model: "x"}}, sampleInput())
 	if err != nil {
 		t.Fatal(err)
 	}
