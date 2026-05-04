@@ -140,8 +140,11 @@ func firecrawlScrapeWithRetry(ctx context.Context, client *http.Client, scrapeUR
 
 		resp, err := client.Do(httpReq)
 		if err != nil {
-			lastErr = fmt.Errorf("firecrawl: %w", err)
-			continue
+			// Transport errors (connection reset, client timeout) are
+			// terminal: we can't tell if the server already accepted the
+			// request, and a retry could double-bill the scrape.
+			// Idempotent retry only kicks in on explicit 5xx + 429 below.
+			return nil, fmt.Errorf("firecrawl: %w", err)
 		}
 		respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 4*1024*1024))
 		resp.Body.Close()

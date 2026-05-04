@@ -3,6 +3,7 @@ package reply
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +13,19 @@ import (
 	"testing"
 	"time"
 )
+
+// countingErrorRT is an http.RoundTripper that always errors and counts
+// invocations. Used to assert retry policy without spinning up a real
+// network endpoint.
+type countingErrorRT struct {
+	calls atomic.Int32
+	err   error
+}
+
+func (rt *countingErrorRT) RoundTrip(*http.Request) (*http.Response, error) {
+	rt.calls.Add(1)
+	return nil, rt.err
+}
 
 // stubFirecrawl returns an httptest server that pretends to be the
 // Firecrawl /v1/scrape endpoint, plus a teardown that resets the
@@ -343,6 +357,28 @@ func TestInspectFirecrawlDoesNotRetryOn4xx(t *testing.T) {
 	}
 	if got := calls.Load(); got != 1 {
 		t.Errorf("4xx should not retry; calls = %d, want 1", got)
+	}
+}
+
+func TestInspectFirecrawlDoesNotRetryTransportErrors(t *testing.T) {
+	// Transport-level errors (connection reset, client timeout) must
+	// not retry: we can't tell whether the server already accepted the
+	// POST, and Firecrawl /v1/scrape is billed per request. Codex P1
+	// finding from PR #44 review.
+	withFastFirecrawlRetry(t)
+
+	rt := &countingErrorRT{err: errors.New("connection refused")}
+	client := &http.Client{Transport: rt}
+
+	_, err := InspectFirecrawl(context.Background(), client, "k", "https://x.example.com")
+	if err == nil {
+		t.Fatal("expected transport error")
+	}
+	if !strings.Contains(err.Error(), "connection refused") {
+		t.Errorf("expected transport error surfaced, got %v", err)
+	}
+	if got := rt.calls.Load(); got != 1 {
+		t.Errorf("transport errors must not retry; calls = %d, want 1", got)
 	}
 }
 
