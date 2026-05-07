@@ -114,7 +114,11 @@ func setupRegen() (*types.Snapshot, []llm.ProviderRef, error) {
 	if openaiModel == "" {
 		openaiModel = cfg.LLM.OpenAIModel
 	}
-	refs, err := buildProviderRefs(providers, anthropicModel, openaiModel)
+	// Use a real reporter so provider-skip warnings (e.g. one of
+	// --providers=anthropic,openai with a missing key) still reach the
+	// user. regen has no stage output of its own, so this reporter is
+	// only used for Warn.
+	refs, err := buildProviderRefs(providers, anthropicModel, openaiModel, newReporter())
 	if err != nil {
 		return nil, nil, err
 	}

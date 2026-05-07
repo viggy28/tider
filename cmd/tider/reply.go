@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -52,6 +53,11 @@ API key for the chosen provider must be set in the environment
 			return errors.New("--url is required")
 		}
 
+		// Reporter is sized for the reply path (5 stages); review mode
+		// bumps the total to 8 once the classifier returns.
+		rep := newReporter()
+		rep.Start(5)
+
 		// 1. Parse URL. Canonicalize first so Reddit mobile share links
 		//    (https://www.reddit.com/s/<token>, common when pasting from
 		//    the Reddit app's Share menu) get resolved to a canonical
@@ -73,6 +79,7 @@ API key for the chosen provider must be set in the environment
 		}
 		cacheRoot := filepath.Join(home, ".tider", "cache")
 		client := reddit.NewClient(reddit.NewCache(cacheRoot))
+		rep.Step("fetching Reddit thread...")
 		thread, err := client.FetchThread(ctx, sub, postID)
 		if err != nil {
 			return err
@@ -88,7 +95,7 @@ API key for the chosen provider must be set in the environment
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(os.Stderr, "session: %s\n", sess.Path())
+		rep.SessionPath(sess.Path())
 
 		// 4. Save thread immediately. Subsequent steps may fail; this
 		//    artifact is preserved regardless.
@@ -102,6 +109,7 @@ API key for the chosen provider must be set in the environment
 		if err != nil {
 			return err
 		}
+		rep.Step("loading contexts: " + formatContextLabel(replyContexts))
 		contexts, err := reply.LoadContexts(bankDir, replyContexts)
 		if err != nil {
 			return err
@@ -123,6 +131,7 @@ API key for the chosen provider must be set in the environment
 		//    b) run the cheaper classifier from tasks.reply_mode.
 		//    --provider propagates so `--provider=anthropic` doesn't
 		//    silently still require OPENAI_API_KEY for the classifier.
+		rep.Step("classifying thread...")
 		var modeResult *types.ReplyModeResult
 		if replyModeOverride != "" {
 			switch replyModeOverride {
@@ -145,6 +154,7 @@ API key for the chosen provider must be set in the environment
 				return err
 			}
 		}
+		rep.Update(string(modeResult.Mode))
 		if err := sess.SaveMode(modeResult); err != nil {
 			return err
 		}
@@ -171,12 +181,17 @@ API key for the chosen provider must be set in the environment
 			if err := sess.WriteJSON("draft-input.json", input); err != nil {
 				return err
 			}
+			rep.Step(fmt.Sprintf("drafting replies with %s/%s...", draftProvider, draftModel))
 			bundle, err = reply.GenerateReply(ctx, draftP, draftModel, input, draftMaxTokens)
 			if err != nil {
 				return err
 			}
 
 		case types.ReplyModeReview:
+			// Review pipeline runs three additional stages on top of the
+			// shared 1–3 (fetch / contexts / classify). Bump total so the
+			// remaining lines render as [N/8] instead of [N/5].
+			rep.SetTotal(8)
 			if len(modeResult.TargetURLs) == 0 {
 				return errors.New("review request detected, but no shop/site URL was found in the original post — rerun with --mode=reply for an ordinary reply, or use a thread that includes a target link")
 			}
@@ -200,11 +215,13 @@ API key for the chosen provider must be set in the environment
 			//   4. Text-only review notes still run alongside; both flow
 			//      into the drafter.
 			httpClient := &http.Client{Timeout: 60 * time.Second}
+			rep.Step("inspecting target with Firecrawl...")
 			inspection, err := reply.InspectReviewTarget(ctx, httpClient, modeResult.TargetURLs[0])
 			if err != nil {
 				return fmt.Errorf("inspection: %w (session preserved at %s; rerun with --mode=reply to draft an ordinary reply)", err, sess.Path())
 			}
 
+			rep.Step("saving screenshot and images...")
 			screenshotDir := filepath.Join(sess.Path(), "screenshots")
 			localPath, err := reply.DownloadScreenshot(ctx, httpClient, inspection.ScreenshotURL, screenshotDir)
 			if err != nil {
@@ -258,6 +275,7 @@ API key for the chosen provider must be set in the environment
 				return err
 			}
 
+			rep.Step("analyzing screenshot and product images...")
 			visualNotes, err := reply.AnalyzeVisual(ctx, visualP, visualModel, visualInput, visualMaxTokens)
 			if err != nil {
 				return fmt.Errorf("visual analysis: %w (session preserved at %s)", err, sess.Path())
@@ -266,6 +284,7 @@ API key for the chosen provider must be set in the environment
 				return err
 			}
 
+			rep.Step("drafting review reply...")
 			// Text-only review notes — still useful alongside visual
 			// because they cover headings/copy/meta which aren't really
 			// "visual" anyway. Uses the cheap classifier model.
@@ -320,6 +339,8 @@ API key for the chosen provider must be set in the environment
 		if err := sess.SaveOutput(md); err != nil {
 			return err
 		}
+		rep.Step("saved session artifacts")
+		rep.Done()
 
 		switch resolveRender(replyRender) {
 		case "markdown":
@@ -379,6 +400,24 @@ func resolveProviderModel(cfg *config.Config, task, providerOverride, modelOverr
 		maxTokens = maxTokensOverride
 	}
 	return
+}
+
+// formatContextLabel renders the user's --context refs as a comma-joined
+// stage-progress suffix, e.g. "loading contexts: kova, ./profile.md".
+// Returns "(none)" when no contexts were requested so the line still
+// reads naturally instead of trailing into a colon.
+func formatContextLabel(refs []string) string {
+	cleaned := make([]string, 0, len(refs))
+	for _, r := range refs {
+		r = strings.TrimSpace(r)
+		if r != "" {
+			cleaned = append(cleaned, r)
+		}
+	}
+	if len(cleaned) == 0 {
+		return "(none)"
+	}
+	return strings.Join(cleaned, ", ")
 }
 
 func init() {

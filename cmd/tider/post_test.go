@@ -65,7 +65,7 @@ func TestResolvePostSourceFromNote(t *testing.T) {
 	resetPostFlags(t)
 	postNote = "Ask sellers about AI listing images. Don't pitch Kova."
 
-	brief, opNote, err := resolvePostSource(context.Background(), &config.Config{}, nil)
+	brief, opNote, err := resolvePostSource(context.Background(), &config.Config{}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestResolvePostSourceFromStdin(t *testing.T) {
 	const body = "Long pasted material with multiple paragraphs.\n\nFrom pbpaste."
 	stdin := stdinPipe(t, body)
 
-	brief, opNote, err := resolvePostSource(context.Background(), &config.Config{}, stdin)
+	brief, opNote, err := resolvePostSource(context.Background(), &config.Config{}, stdin, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestResolvePostSourceConflictingFlags(t *testing.T) {
 	postNote = "x"
 	postFile = "y.md"
 
-	_, _, err := resolvePostSource(context.Background(), &config.Config{}, nil)
+	_, _, err := resolvePostSource(context.Background(), &config.Config{}, nil, nil)
 	if err == nil {
 		t.Fatal("expected conflict error")
 	}
@@ -127,7 +127,7 @@ func TestResolvePostSourceConflictWithStdin(t *testing.T) {
 
 	// --note set AND stdin piped → should pick --note (explicit flag),
 	// not error. Stdin only counts as a source when no flag is set.
-	brief, _, err := resolvePostSource(context.Background(), &config.Config{}, stdin)
+	brief, _, err := resolvePostSource(context.Background(), &config.Config{}, stdin, nil)
 	if err != nil {
 		t.Fatalf("explicit flag should win over piped stdin: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestResolvePostSourceNoSource(t *testing.T) {
 	resetPostFlags(t)
 	tty := stdinTTY(t)
 
-	_, _, err := resolvePostSource(context.Background(), &config.Config{}, tty)
+	_, _, err := resolvePostSource(context.Background(), &config.Config{}, tty, nil)
 	if err == nil {
 		t.Fatal("expected usage error when no source set and stdin is interactive")
 	}
@@ -166,7 +166,7 @@ func TestResolvePostSourceFromBriefJSON(t *testing.T) {
 	}
 	postBriefPath = briefPath
 
-	brief, opNote, err := resolvePostSource(context.Background(), &config.Config{}, nil)
+	brief, opNote, err := resolvePostSource(context.Background(), &config.Config{}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestNewIntakeProviderFallsBackWhenPrimaryKeyMissing(t *testing.T) {
 			},
 		},
 	}
-	ip, err := newIntakeProvider(cfg)
+	ip, err := newIntakeProvider(cfg, nil)
 	if err != nil {
 		t.Fatalf("expected fallback to anthropic, got error: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestNewIntakeProviderErrorsWhenAllKeysMissing(t *testing.T) {
 			},
 		},
 	}
-	_, err := newIntakeProvider(cfg)
+	_, err := newIntakeProvider(cfg, nil)
 	if err == nil {
 		t.Fatal("expected error when no provider keys are set")
 	}
@@ -256,7 +256,7 @@ func TestResolvePostSourceEmptyNote(t *testing.T) {
 	resetPostFlags(t)
 	postNote = "   \n\t  "
 
-	_, _, err := resolvePostSource(context.Background(), &config.Config{}, nil)
+	_, _, err := resolvePostSource(context.Background(), &config.Config{}, nil, nil)
 	if err == nil {
 		t.Fatal("expected error for whitespace-only note")
 	}
