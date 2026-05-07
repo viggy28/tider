@@ -51,26 +51,18 @@ var researchCmd = &cobra.Command{
 
 		ctx := context.Background()
 
-		// --raw skips the LLM step, so the total drops from 4 to 3.
+		// --raw skips the LLM step, so the total drops from 3 to 2.
+		// One stage covers cache lookup + (notes parse + Reddit fetch)
+		// because subreddits.yaml is read lazily — a cache hit must not
+		// fail just because notes are missing or malformed.
 		rep := newReporter()
 		if researchRaw {
-			rep.Start(3)
+			rep.Start(2)
 		} else {
-			rep.Start(4)
+			rep.Start(3)
 		}
 
-		// Stage 1: load curated metadata (subreddits.yaml). Always read
-		// fresh; stage runs even on cache hit so progress is consistent.
-		rep.Step("loading subreddit metadata...")
-		notes, err := research.LoadNotes(notesPath)
-		if err != nil {
-			return err
-		}
-
-		// Stage 2: fetch recent posts. Cache hit short-circuits the
-		// network call; the stage line still prints so the user sees the
-		// canonical [2/N] and the next [3/N] follows in order.
-		rep.Step("fetching recent posts...")
+		rep.Step("loading subreddit data...")
 		var bundle *types.Research
 		if !researchRefresh {
 			cached, err := research.LoadRaw(cacheRoot, sub, research.RawBundleTTL)
@@ -80,6 +72,10 @@ var researchCmd = &cobra.Command{
 			bundle = cached
 		}
 		if bundle == nil {
+			notes, err := research.LoadNotes(notesPath)
+			if err != nil {
+				return err
+			}
 			client := reddit.NewClient(reddit.NewCache(cacheRoot))
 			bundle, err = research.For(ctx, client, notes, sub, researchRefresh)
 			if err != nil {
