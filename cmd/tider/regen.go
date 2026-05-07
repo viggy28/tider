@@ -114,7 +114,7 @@ func setupRegen() (*types.Snapshot, []llm.ProviderRef, error) {
 	if openaiModel == "" {
 		openaiModel = cfg.LLM.OpenAIModel
 	}
-	refs, err := buildProviderRefs(providers, anthropicModel, openaiModel)
+	refs, err := buildProviderRefs(providers, anthropicModel, openaiModel, nil)
 	if err != nil {
 		return nil, nil, err
 	}

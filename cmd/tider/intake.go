@@ -38,6 +38,12 @@ API key for the chosen provider must be set in the environment
 			return fmt.Errorf("exactly one of --url or --file is required")
 		}
 
+		// 2 stages: cheap setup (config + provider) then the LLM
+		// extraction call, which is the only step worth waiting on.
+		rep := newReporter()
+		rep.Start(2)
+		rep.Step("validating source...")
+
 		cfg, err := config.Load()
 		if err != nil {
 			return err
@@ -63,15 +69,21 @@ API key for the chosen provider must be set in the environment
 
 		ctx := context.Background()
 		var brief *types.Brief
+		var sourceLabel string
 		switch {
 		case intakeURL != "":
+			sourceLabel = intakeURL
+			rep.Step(fmt.Sprintf("extracting brief from %s with %s/%s...", sourceLabel, provider, model))
 			brief, err = i.FromURL(ctx, intakeURL)
 		case intakeFile != "":
+			sourceLabel = intakeFile
+			rep.Step(fmt.Sprintf("extracting brief from %s with %s/%s...", sourceLabel, provider, model))
 			brief, err = i.FromFile(ctx, intakeFile)
 		}
 		if err != nil {
 			return err
 		}
+		rep.Done()
 
 		switch resolveRender(intakeRender) {
 		case "markdown":

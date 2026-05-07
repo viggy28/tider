@@ -50,12 +50,49 @@ var researchCmd = &cobra.Command{
 		}
 
 		ctx := context.Background()
-		bundle, err := loadOrFetchResearch(ctx, cacheRoot, notesPath, sub, researchRefresh)
+
+		// --raw skips the LLM step, so the total drops from 4 to 3.
+		rep := newReporter()
+		if researchRaw {
+			rep.Start(3)
+		} else {
+			rep.Start(4)
+		}
+
+		// Stage 1: load curated metadata (subreddits.yaml). Always read
+		// fresh; stage runs even on cache hit so progress is consistent.
+		rep.Step("loading subreddit metadata...")
+		notes, err := research.LoadNotes(notesPath)
 		if err != nil {
 			return err
 		}
 
+		// Stage 2: fetch recent posts. Cache hit short-circuits the
+		// network call; the stage line still prints so the user sees the
+		// canonical [2/N] and the next [3/N] follows in order.
+		rep.Step("fetching recent posts...")
+		var bundle *types.Research
+		if !researchRefresh {
+			cached, err := research.LoadRaw(cacheRoot, sub, research.RawBundleTTL)
+			if err != nil {
+				return err
+			}
+			bundle = cached
+		}
+		if bundle == nil {
+			client := reddit.NewClient(reddit.NewCache(cacheRoot))
+			bundle, err = research.For(ctx, client, notes, sub, researchRefresh)
+			if err != nil {
+				return err
+			}
+		}
+
 		if researchRaw {
+			if err := research.SaveRaw(cacheRoot, sub, bundle); err != nil {
+				rep.Warn("failed to save raw research cache: %v", err)
+			}
+			rep.Step("saved raw bundle to cache")
+			rep.Done()
 			return printJSON(bundle)
 		}
 
@@ -80,11 +117,23 @@ var researchCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("%w (use --raw to print cached/fetched Reddit data without LLM insights)", err)
 		}
-		fmt.Fprintf(os.Stderr, "generating pain-point insights with %s/%s...\n", provider, model)
+
+		// Stage 3: insights LLM call (the slow one — typically 30-60s).
+		rep.Step(fmt.Sprintf("generating pain-point insights with %s/%s...", provider, model))
 		insights, err := research.GenerateInsights(ctx, p, model, *bundle, maxTokens)
 		if err != nil {
 			return err
 		}
+
+		// Stage 4: persist the raw Reddit bundle. Done after insights so
+		// a failed LLM run doesn't bury the cache write side-effect under
+		// an in-flight stage line.
+		if err := research.SaveRaw(cacheRoot, sub, bundle); err != nil {
+			rep.Warn("failed to save raw research cache: %v", err)
+		}
+		rep.Step("saved raw bundle to cache")
+		rep.Done()
+
 		report := &types.ResearchReport{
 			Raw:       *bundle,
 			Insights:  *insights,
@@ -107,29 +156,6 @@ var researchCmd = &cobra.Command{
 		}
 		return nil
 	},
-}
-
-func loadOrFetchResearch(ctx context.Context, cacheRoot, notesPath, sub string, refresh bool) (*types.Research, error) {
-	if !refresh {
-		if cached, err := research.LoadRaw(cacheRoot, sub, research.RawBundleTTL); err != nil {
-			return nil, err
-		} else if cached != nil {
-			return cached, nil
-		}
-	}
-	notes, err := research.LoadNotes(notesPath)
-	if err != nil {
-		return nil, err
-	}
-	client := reddit.NewClient(reddit.NewCache(cacheRoot))
-	bundle, err := research.For(ctx, client, notes, sub, refresh)
-	if err != nil {
-		return nil, err
-	}
-	if err := research.SaveRaw(cacheRoot, sub, bundle); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to save raw research cache: %v\n", err)
-	}
-	return bundle, nil
 }
 
 func printJSON(v any) error {

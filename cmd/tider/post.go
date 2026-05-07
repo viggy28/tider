@@ -16,6 +16,7 @@ import (
 	"github.com/viggy28/tider/draft"
 	"github.com/viggy28/tider/intake"
 	"github.com/viggy28/tider/internal/llm"
+	"github.com/viggy28/tider/internal/progress"
 	"github.com/viggy28/tider/internal/reddit"
 	"github.com/viggy28/tider/internal/types"
 	"github.com/viggy28/tider/lastdraft"
@@ -82,12 +83,23 @@ func runPost(ctx context.Context, stdin *os.File) error {
 		ctx = context.Background()
 	}
 
+	// --dry-run skips provider selection, drafting, and snapshot save:
+	// 4 stages (resolve / research / contexts / render prompt) versus 6
+	// for a normal run.
+	rep := newReporter()
+	if postDryRun {
+		rep.Start(4)
+	} else {
+		rep.Start(6)
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
 
-	brief, operatorNote, err := resolvePostSource(ctx, cfg, stdin)
+	rep.Step("resolving source...")
+	brief, operatorNote, err := resolvePostSource(ctx, cfg, stdin, rep)
 	if err != nil {
 		return err
 	}
@@ -105,6 +117,7 @@ func runPost(ctx context.Context, stdin *os.File) error {
 		notesPath = filepath.Join(home, ".tider", "subreddits.yaml")
 	}
 
+	rep.Step(fmt.Sprintf("loading Reddit research for r/%s...", postSub))
 	notes, err := research.LoadNotes(notesPath)
 	if err != nil {
 		return err
@@ -115,6 +128,7 @@ func runPost(ctx context.Context, stdin *os.File) error {
 		return fmt.Errorf("research %s: %w", postSub, err)
 	}
 
+	rep.Step("loading contexts: " + formatContextLabel(postContexts))
 	bankDir, err := contextbank.DefaultDir()
 	if err != nil {
 		return err
@@ -146,14 +160,17 @@ func runPost(ctx context.Context, stdin *os.File) error {
 	}
 
 	if postDryRun {
+		rep.Step("rendering prompt (dry-run)...")
 		prompt, err := draft.RenderPrompt(in)
 		if err != nil {
 			return err
 		}
+		rep.Done()
 		fmt.Println(prompt)
 		return nil
 	}
 
+	rep.Step("selecting providers...")
 	providers := postProviders
 	if providers == "" {
 		providers = cfg.Defaults.Providers
@@ -166,7 +183,7 @@ func runPost(ctx context.Context, stdin *os.File) error {
 	if openaiModel == "" {
 		openaiModel = cfg.LLM.OpenAIModel
 	}
-	refs, err := buildProviderRefs(providers, anthropicModel, openaiModel)
+	refs, err := buildProviderRefs(providers, anthropicModel, openaiModel, rep)
 	if err != nil {
 		return err
 	}
@@ -174,6 +191,7 @@ func runPost(ctx context.Context, stdin *os.File) error {
 		return errors.New("no usable providers — set ANTHROPIC_API_KEY and/or OPENAI_API_KEY")
 	}
 
+	rep.Step(fmt.Sprintf("drafting with %s...", providerSummary(refs)))
 	bundle, err := draft.Generate(ctx, refs, in)
 	if err != nil {
 		return err
@@ -182,9 +200,11 @@ func runPost(ctx context.Context, stdin *os.File) error {
 	if root, derr := lastdraft.Default(); derr == nil {
 		snap := &types.Snapshot{Brief: *brief, Research: *researchBundle, Bundle: *bundle}
 		if serr := lastdraft.Save(root, postSub, snap); serr != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to save last-draft snapshot: %v\n", serr)
+			rep.Warn("failed to save last-draft snapshot: %v", serr)
 		}
 	}
+	rep.Step("saved snapshot")
+	rep.Done()
 
 	switch resolveRender(postRender) {
 	case "markdown":
@@ -211,7 +231,10 @@ func runPost(ctx context.Context, stdin *os.File) error {
 // used only when no source flag is set and stdin is piped — an
 // interactive shell is treated as "no source" so we can fail with a
 // usage message instead of blocking on a tty.
-func resolvePostSource(ctx context.Context, cfg *config.Config, stdin *os.File) (*types.Brief, string, error) {
+//
+// rep is threaded so the intake LLM-fallback warning honors --quiet /
+// --no-progress instead of bypassing them via a raw stderr write.
+func resolvePostSource(ctx context.Context, cfg *config.Config, stdin *os.File, rep *progress.Reporter) (*types.Brief, string, error) {
 	sources := []string{}
 	if postNote != "" {
 		sources = append(sources, "--note")
@@ -253,7 +276,7 @@ func resolvePostSource(ctx context.Context, cfg *config.Config, stdin *os.File) 
 		}
 		return b, b.Summary, nil
 	case "--file":
-		ip, err := newIntakeProvider(cfg)
+		ip, err := newIntakeProvider(cfg, rep)
 		if err != nil {
 			return nil, "", err
 		}
@@ -263,7 +286,7 @@ func resolvePostSource(ctx context.Context, cfg *config.Config, stdin *os.File) 
 		}
 		return b, "", nil
 	case "--url":
-		ip, err := newIntakeProvider(cfg)
+		ip, err := newIntakeProvider(cfg, rep)
 		if err != nil {
 			return nil, "", err
 		}
@@ -282,7 +305,7 @@ func resolvePostSource(ctx context.Context, cfg *config.Config, stdin *os.File) 
 	return nil, "", fmt.Errorf("internal: unhandled source %s", sources[0])
 }
 
-func newIntakeProvider(cfg *config.Config) (postIntake, error) {
+func newIntakeProvider(cfg *config.Config, rep *progress.Reporter) (postIntake, error) {
 	provider, model, maxTokens := cfg.ForTask("intake")
 	p, err := llm.New(llm.Config{Provider: provider, Model: model})
 	if err == nil {
@@ -302,7 +325,7 @@ func newIntakeProvider(cfg *config.Config) (postIntake, error) {
 	if altErr != nil {
 		return postIntake{}, fmt.Errorf("intake: no usable provider — set ANTHROPIC_API_KEY or OPENAI_API_KEY")
 	}
-	fmt.Fprintf(os.Stderr, "intake: %s key missing, falling back to %s\n", provider, altProvider)
+	rep.Warn("intake: %s key missing, falling back to %s", provider, altProvider)
 	return postIntake{p: p, maxTokens: maxTokens}, nil
 }
 
@@ -365,10 +388,10 @@ func loadBrief(path string) (*types.Brief, error) {
 // buildProviderRefs constructs the list of providers to fan out across.
 // providersFlag is comma-separated ("anthropic,openai"). Each requested
 // provider needs its API key in the environment; missing keys cause that
-// provider to be silently skipped (with a stderr warning) rather than
-// failing the whole run, so a working provider isn't blocked by a missing
-// key for the other.
-func buildProviderRefs(providersFlag, anthropicModel, openaiModel string) ([]draft.ProviderRef, error) {
+// provider to be silently skipped (with a warning) rather than failing
+// the whole run, so a working provider isn't blocked by a missing key
+// for the other.
+func buildProviderRefs(providersFlag, anthropicModel, openaiModel string, rep *progress.Reporter) ([]draft.ProviderRef, error) {
 	want := strings.Split(providersFlag, ",")
 	var refs []draft.ProviderRef
 	for _, name := range want {
@@ -377,14 +400,14 @@ func buildProviderRefs(providersFlag, anthropicModel, openaiModel string) ([]dra
 		case "anthropic":
 			p, err := llm.NewAnthropic(anthropicModel)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "skipping anthropic: %v\n", err)
+				rep.Warn("skipping anthropic: %v", err)
 				continue
 			}
 			refs = append(refs, draft.ProviderRef{Provider: p, Model: anthropicModel})
 		case "openai":
 			p, err := llm.NewOpenAI(openaiModel)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "skipping openai: %v\n", err)
+				rep.Warn("skipping openai: %v", err)
 				continue
 			}
 			refs = append(refs, draft.ProviderRef{Provider: p, Model: openaiModel})
@@ -395,6 +418,16 @@ func buildProviderRefs(providersFlag, anthropicModel, openaiModel string) ([]dra
 		}
 	}
 	return refs, nil
+}
+
+// providerSummary renders a fan-out provider list as a stage-progress
+// suffix, e.g. "anthropic/claude-3-5-sonnet, openai/gpt-5".
+func providerSummary(refs []draft.ProviderRef) string {
+	parts := make([]string, 0, len(refs))
+	for _, r := range refs {
+		parts = append(parts, fmt.Sprintf("%s/%s", r.Provider.Name(), r.Model))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func init() {
